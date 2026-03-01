@@ -1,0 +1,8 @@
+{
+  "projects": {
+    "default": "cricket-prediction-app-a0f1c",
+    "dev": "cricket-prediction-app-a0f1c"
+  },
+  "targets": {},
+  "etags": {}
+}
