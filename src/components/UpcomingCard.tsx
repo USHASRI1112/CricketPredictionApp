@@ -1,6 +1,6 @@
 /* eslint-disable react-native/no-inline-styles */
-import React from 'react';
-import { View, Text, Image, StyleSheet, TouchableOpacity } from 'react-native';
+import React, { useEffect, useRef } from 'react';
+import { View, Text, Image, StyleSheet, TouchableOpacity, Animated } from 'react-native';
 import { Match } from '../types';
 
 interface UpcomingCardProps {
@@ -8,62 +8,90 @@ interface UpcomingCardProps {
   onPress: () => void;
 }
 
+// Countdown-style ticking arrow animation
+function TickArrow() {
+  const translateX = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(translateX, { toValue: 4, duration: 600, useNativeDriver: true }),
+        Animated.timing(translateX, { toValue: 0, duration: 600, useNativeDriver: true }),
+      ])
+    ).start();
+  }, []);
+
+  return (
+    <Animated.Text style={[styles.arrowAnim, { transform: [{ translateX }] }]}>›</Animated.Text>
+  );
+}
+
 const UpcomingCard: React.FC<UpcomingCardProps> = ({ match, onPress }) => {
   const initials = (name: string) =>
-    name
-      .split(' ')
-      .map(s => s[0])
-      .slice(0, 2)
-      .join('')
-      .toUpperCase();
+    name.split(' ').map(s => s[0]).slice(0, 2).join('').toUpperCase();
 
   const team1Flag = match.teamInfo && match.teamInfo.length >= 2 ? match.teamInfo[0].img : null;
   const team2Flag = match.teamInfo && match.teamInfo.length >= 2 ? match.teamInfo[1].img : null;
 
   return (
-    <TouchableOpacity style={styles.card} onPress={onPress}>
-      <View style={styles.row}>
+    <TouchableOpacity style={styles.card} onPress={onPress} activeOpacity={0.8}>
+      {/* Teal top bar */}
+      <View style={styles.topBar} />
+
+      {/* UPCOMING badge row */}
+      <View style={styles.badgeRow}>
+        <View style={styles.upcomingBadge}>
+          <TickArrow />
+          <Text style={styles.upcomingBadgeText}>UPCOMING</Text>
+        </View>
+        <View style={styles.flex} />
+        {match.matchType ? (
+          <Text style={styles.matchTypeChip}>{match.matchType.toUpperCase()}</Text>
+        ) : null}
+      </View>
+
+      {/* Teams row */}
+      <View style={styles.teamsRow}>
+        {/* Team 1 */}
         <View style={styles.team}>
           {team1Flag ? (
             <Image source={{ uri: team1Flag }} style={styles.teamAvatar} />
           ) : (
-            <View style={[styles.teamAvatar, styles.teamAvatarFallback, { backgroundColor: '#10b981' }]}>
+            <View style={[styles.teamAvatar, styles.teamAvatarFallback, { backgroundColor: '#0e2420' }]}>
               <Text style={styles.teamInitial}>{initials(match.teams[0] || '')}</Text>
             </View>
           )}
-          <Text style={styles.teamName} numberOfLines={1}>
-            {match.teams[0]}
-          </Text>
+          <Text style={styles.teamName} numberOfLines={1}>{match.teams[0]}</Text>
         </View>
 
-        <View style={styles.vsContainer}>
+        {/* Center */}
+        <View style={styles.centerCol}>
+          {/* Hourglass / countdown feel */}
+          <Text style={styles.countdownIcon}>⏳</Text>
           <Text style={styles.vsText}>VS</Text>
-          <View style={styles.upcomingBadge}>
-            <Text style={styles.badgeText}>UPCOMING</Text>
+          <View style={styles.timePill}>
+            <Text style={styles.timeText} numberOfLines={2}>{match.dateTimeGMT}</Text>
           </View>
-          <Text style={styles.timeText}>{match.dateTimeGMT}</Text>
         </View>
 
+        {/* Team 2 */}
         <View style={styles.team}>
           {team2Flag ? (
             <Image source={{ uri: team2Flag }} style={styles.teamAvatar} />
           ) : (
-            <View style={[styles.teamAvatar, styles.teamAvatarFallback, { backgroundColor: '#14b8a6' }]}>
+            <View style={[styles.teamAvatar, styles.teamAvatarFallback, { backgroundColor: '#0e1e22' }]}>
               <Text style={styles.teamInitial}>{initials(match.teams[1] || '')}</Text>
             </View>
           )}
-          <Text style={styles.teamName} numberOfLines={1}>
-            {match.teams[1]}
-          </Text>
+          <Text style={styles.teamName} numberOfLines={1}>{match.teams[1]}</Text>
         </View>
       </View>
 
-      <View style={styles.matchMeta}>
-        <Text style={styles.matchVenue}>📍 {match.venue}</Text>
-        <Text style={styles.matchDate}>📅 {match.date}</Text>
-        {match.matchType && (
-          <Text style={styles.matchType}>🏏 {match.matchType.toUpperCase()}</Text>
-        )}
+      {/* Footer */}
+      <View style={styles.footer}>
+        <Text style={styles.metaText} numberOfLines={1}>📍 {match.venue}</Text>
+        <View style={styles.footerDot} />
+        <Text style={styles.metaText}>📅 {match.date}</Text>
       </View>
     </TouchableOpacity>
   );
@@ -71,95 +99,148 @@ const UpcomingCard: React.FC<UpcomingCardProps> = ({ match, onPress }) => {
 
 const styles = StyleSheet.create({
   card: {
-    backgroundColor: '#f0fff4',
-    borderRadius: 14,
-    padding: 14,
-    marginBottom: 16,
-    borderWidth: 2,
-    borderColor: '#c6f6d5',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.08,
-    shadowRadius: 3.84,
-    elevation: 3,
+    backgroundColor: '#081814',
+    borderRadius: 16,
+    marginBottom: 14,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: 'rgba(56,200,160,0.25)',
+    shadowColor: '#38c8a0',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 12,
+    elevation: 7,
   },
-  row: {
+  topBar: {
+    height: 3,
+    backgroundColor: '#38c8a0',
+  },
+  badgeRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
+    paddingHorizontal: 14,
+    paddingTop: 12,
+    paddingBottom: 6,
+  },
+  upcomingBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(56,200,160,0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(56,200,160,0.35)',
+    borderRadius: 20,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    gap: 4,
+  },
+  arrowAnim: {
+    color: '#38c8a0',
+    fontSize: 14,
+    fontWeight: '900',
+    lineHeight: 14,
+  },
+  upcomingBadgeText: {
+    color: '#38c8a0',
+    fontSize: 10,
+    fontWeight: '900',
+    letterSpacing: 2.5,
+  },
+  flex: { flex: 1 },
+  matchTypeChip: {
+    color: '#206050',
+    fontSize: 9,
+    fontWeight: '800',
+    letterSpacing: 2,
+    backgroundColor: 'rgba(56,200,160,0.08)',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(56,200,160,0.15)',
+  },
+  teamsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 14,
+    paddingBottom: 14,
   },
   team: {
+    flex: 1,
     alignItems: 'center',
-    width: '30%',
+    gap: 8,
   },
   teamAvatar: {
     width: 56,
     height: 56,
     borderRadius: 28,
-    marginBottom: 6,
+    borderWidth: 2,
+    borderColor: 'rgba(56,200,160,0.25)',
   },
   teamAvatarFallback: {
     alignItems: 'center',
     justifyContent: 'center',
   },
   teamInitial: {
-    color: '#fff',
-    fontWeight: '700',
+    color: '#38c8a0',
+    fontWeight: '800',
     fontSize: 18,
+    letterSpacing: 1,
   },
   teamName: {
-    color: '#2d3748',
-    fontSize: 13,
-    fontWeight: '600',
+    color: '#5a9080',
+    fontSize: 12,
+    fontWeight: '700',
     textAlign: 'center',
+    letterSpacing: 0.3,
   },
-  vsContainer: {
+  centerCol: {
     alignItems: 'center',
-    width: '40%',
+    width: 80,
+    gap: 5,
+  },
+  countdownIcon: {
+    fontSize: 18,
   },
   vsText: {
-    color: '#1a202c',
-    fontWeight: '800',
+    color: '#f0e6c8',
+    fontWeight: '900',
     fontSize: 16,
-    marginBottom: 6,
+    letterSpacing: 3,
+  },
+  timePill: {
+    backgroundColor: 'rgba(56,200,160,0.08)',
+    borderRadius: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+    borderWidth: 1,
+    borderColor: 'rgba(56,200,160,0.18)',
   },
   timeText: {
-    color: '#718096',
-    fontSize: 11,
+    color: '#2a7060',
+    fontSize: 10,
     textAlign: 'center',
-  },
-  upcomingBadge: {
-    backgroundColor: '#48bb78',
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 6,
-    marginVertical: 6,
-  },
-  badgeText: {
-    color: '#fff',
-    fontSize: 11,
-    fontWeight: '700',
-  },
-  matchMeta: {
-    marginTop: 12,
-    borderTopWidth: 1,
-    borderTopColor: '#c6f6d5',
-    paddingTop: 10,
-  },
-  matchVenue: {
-    color: '#4a5568',
-    fontSize: 12,
-    marginBottom: 4,
-  },
-  matchDate: {
-    color: '#718096',
-    fontSize: 12,
-    marginBottom: 4,
-  },
-  matchType: {
-    color: '#2f855a',
-    fontSize: 12,
     fontWeight: '600',
+    lineHeight: 14,
+  },
+  footer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(56,200,160,0.08)',
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    gap: 8,
+  },
+  footerDot: {
+    width: 3,
+    height: 3,
+    borderRadius: 1.5,
+    backgroundColor: '#1a4838',
+  },
+  metaText: {
+    color: '#2a5040',
+    fontSize: 11,
+    flex: 1,
   },
 });
 

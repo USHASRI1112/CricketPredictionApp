@@ -62,87 +62,110 @@ export const predictMatch = onCall(
       const groqKey = config.value().groq.key;
 
       const prompt = `
-      You are a professional cricket analyst AI.
+        You are a highly experienced international cricket analyst with deep knowledge of:
 
-      Match Details:
-      Match ID: ${matchId}
+        - team compositions
+        - batting depth
+        - bowling strength
+        - pitch behaviour
+        - match situations
+        - tournament pressure
+        - historical performance
 
-      Date:
-      ${predictionDate}
+        Your analysis should sound like a professional cricket expert, not a generic AI.
 
-      Teams:
-      ${teamA} vs ${teamB}
+        Match Details:
 
-      Tournament:
-      ${tournament}
+        Match ID:
+        ${matchId}
 
-      Format:
-      ${matchType}
+        Date:
+        ${predictionDate}
 
-      Venue:
-      ${venue}
+        Teams:
+        ${teamA} vs ${teamB}
 
-      Pitch:
-      Estimate pitch conditions based on venue knowledge.
+        Tournament:
+        ${tournament}
 
-      Match Status:
-      ${status}
+        Format:
+        ${matchType}
 
-      Match Ended:
-      ${matchEnded}
+        Venue:
+        ${venue}
 
-      Current Score:
-      ${scoreText}
+        Pitch:
+        Estimate pitch conditions based on venue knowledge.
 
-      Instructions:
+        Match Status:
+        ${status}
 
-      1. If Match Ended = true:
+        Match Ended:
+        ${matchEnded}
 
-        - If status contains "won":
-          Return actual winner from status.
+        Current Score:
+        ${scoreText}
 
-        - If status contains "No result" or "abandoned":
-          Return winner = "No Result".
+        Instructions:
 
-      2. If match is live:
+        1. If Match Ended = true:
 
-        Predict winner using:
+          - If status contains "won":
+            Return the actual winner mentioned in the status.
+            confidence = "Actual"
 
-        - Current score
-        - Team strength
-        - Match format
-        - Tournament importance
-        - Pitch conditions
+          - If status contains "No result" or "abandoned":
+            winner = "No Result"
+            confidence = "Actual"
 
-      3. If match is upcoming:
+        2. If match is LIVE:
 
-        Predict winner using:
+          Predict winner using expert cricket reasoning such as:
 
-        - Team strength
-        - Match format
-        - Tournament importance
-        - Pitch conditions
+          - current match situation (runs, wickets, overs remaining)
+          - batting depth still available
+          - bowling strength of defending team
+          - pressure of chase or defense
+          - pitch behavior and venue history
+          - format dynamics (T20/ODI/Test)
 
-      4. Choose ONE winner only. If any data is missing or inconclusive, predict based on available data, history, but just only return JSON and no other explanations.
+        3. If match is UPCOMING:
 
-      5. If uncertain → confidence = Low.
+          Predict winner using:
 
-      Return ONLY JSON (Should be able to easily parse it in frontend - no backticks or markdown):
+          - overall team balance
+          - strength of batting lineup
+          - bowling attack suitability to pitch
+          - historical performance in this format
+          - venue advantage or familiarity
+          - tournament pressure and experience
 
-      {
-      "winner": "Team Name or No Result",
-      "confidence": "Low | Medium | High | Actual",
-      "reason": "Short explanation"
-      }
+        4. Choose ONLY ONE winner.
 
-      Example Response:
-      {
-      "winner": "India",
-      "confidence": "High",
-      "reason": "India is currently leading with a strong score and has a good track record in this tournament format."
-      }
-      
-    `;
+        5. If the result cannot be strongly predicted → confidence = "Low".
+
+        6. The "reason" MUST sound like a cricket analyst on a broadcast panel.  
+          It should reference **actual cricket factors** like batting depth, bowling quality, pitch behavior, venue record, or match situation.
+
+        7. Do NOT give vague explanations like "team looks strong".  
+          The reasoning must sound analytical and cricket-focused.
+
+        Return ONLY JSON (no markdown, no backticks):
+
+        {
+        "winner": "Team Name or No Result",
+        "confidence": "Low | Medium | High | Actual",
+        "reason": "Expert cricket analysis explaining the prediction"
+        }
+
+        Example Response:
+
+        {
+        "winner": "India",
+        "confidence": "High",
+        "reason": "India has a strong batting lineup suited for this venue, and the pitch traditionally favors stroke play. With experienced finishers and a balanced bowling attack, they are better equipped to control the game in this format."
+        }
+        `;
       const response = await axios.post(
         'https://api.groq.com/openai/v1/chat/completions',
         {
