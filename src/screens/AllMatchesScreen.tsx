@@ -24,6 +24,8 @@ import { fetchMatches } from '../services/Matches';
 import { fetchMatchesFromLocal } from '../services/MatchesFromLocal';
 import { Match } from '../types';
 import Add, { NativeAdCard } from './Add';
+import { subscribeToLiveScores } from '../services/LiveScoreCache';
+
 
 type AllMatchesScreenNavigationProp = NativeStackNavigationProp<
   RootStackParamList,
@@ -207,6 +209,40 @@ export default function AllMatchesScreen() {
     [matches],
   );
 
+  useEffect(() => {
+    // Only subscribe if there are live matches
+    if (!live || live.length === 0) { return; }
+
+    console.log(`[LiveCache] Subscribing to live scores for ${live.length} matches`);
+
+    const unsub = subscribeToLiveScores((freshMatches) => {
+      console.log(`[LiveCache] Got ${freshMatches.length} fresh live matches from Firestore`);
+
+      setMatches(prev => {
+        const liveIds = new Set(live.map(m => m.id));
+        return prev.map(m => {
+          if (!liveIds.has(m.id)) { return m; } // don't touch non-live matches
+          const fresh = freshMatches.find(x => x.id === m.id);
+          if (!fresh) { return m; }
+          return {
+            ...m,
+            status: fresh.status ?? m.status,
+            score: fresh.score ?? m.score,
+            matchEnded: fresh.matchEnded ?? m.matchEnded,
+            matchStarted: fresh.matchStarted ?? m.matchStarted,
+          };
+        });
+      });
+    });
+    return () => {
+      console.log('[LiveCache] Unsubscribing from live scores');
+      unsub();
+    };
+  }, [live.length]); // re-subscribe when number of live matches changes
+
+
+
+
   // Counts per filter
   const counts: Record<FilterKey, number> = {
     all: matches.length,
@@ -360,7 +396,7 @@ export default function AllMatchesScreen() {
                 }
                 return [card];
               })}
-               <NativeAdCard key="ad-ended-end" />
+              <NativeAdCard key="ad-ended-end" />
             </View>
           )}
 

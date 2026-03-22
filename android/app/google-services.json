@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "735213023668",
+    "project_id": "cricket-prediction-app-a0f1c",
+    "storage_bucket": "cricket-prediction-app-a0f1c.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:735213023668:android:ac120d14b8f0bcf07fc2e1",
+        "android_client_info": {
+          "package_name": "com.cricketpredictionapp"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCgP5InXXvZD3wGjdj42l-QaXquVeC-fhE"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

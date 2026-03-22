@@ -1029,12 +1029,11 @@ export default function MatchScreen() {
           </View>
 
           {/* ── Fan Poll ───────────────────────────────────── */}
-          <PollCard
+          {/* <PollCard
             match = {match}
-          />
+          /> */}
 
-          <ProjectedScoreCard match={match} addRef={rewardRef} />
-
+        
 
           {/* ── AI Prediction Card ────────────────────────── */}
           {predictionLocked ? (
@@ -1131,6 +1130,8 @@ export default function MatchScreen() {
               </View>
             </TouchableOpacity>
           )}
+
+          <ProjectedScoreCard match={match} addRef={rewardRef} />
 
           <View style={styles.bottomSpacer} />
         </ScrollView>

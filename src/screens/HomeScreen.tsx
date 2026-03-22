@@ -934,7 +934,7 @@ function GetStartedButton({ onPress }: { onPress: () => void }) {
   const pressScale = useRef(new Animated.Value(1)).current;
   const pressOp    = useRef(new Animated.Value(0)).current;
   const shimmer    = useRef(new Animated.Value(-1)).current;
-  const ring       = useRef(new Animated.Value(0)).current;
+  // ← ring removed entirely
 
   useEffect(() => {
     Animated.loop(Animated.sequence([
@@ -942,32 +942,29 @@ function GetStartedButton({ onPress }: { onPress: () => void }) {
       Animated.timing(breathe, { toValue: 1,     duration: 1400, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
     ])).start();
     Animated.loop(Animated.timing(shimmer, { toValue: 2, duration: 2600, easing: Easing.linear, useNativeDriver: true })).start();
-    Animated.loop(Animated.timing(ring,    { toValue: 1, duration: 5000, easing: Easing.linear, useNativeDriver: true })).start();
+    // ← ring animation removed
   }, []);
 
-  const ringRotate = ring.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '360deg'] });
-  const shimmerTx  = shimmer.interpolate({ inputRange: [-1, 2], outputRange: [-220, 440] });
+  const shimmerTx = shimmer.interpolate({ inputRange: [-1, 2], outputRange: [-220, 440] });
 
   const onIn  = () => {
     setPressed(true); Vibration.vibrate(18);
     Animated.parallel([
-      Animated.spring(pressScale, { toValue: 0.93, speed: 50, bounciness: 4, useNativeDriver: true }),
-      Animated.timing(pressOp, { toValue: 1, duration: 80, useNativeDriver: true }),
+      Animated.spring(pressScale, { toValue: 0.93, speed: 50, bounciness: 4,  useNativeDriver: true }),
+      Animated.timing(pressOp,    { toValue: 1,    duration: 80,               useNativeDriver: true }),
     ]).start();
   };
   const onOut = () => {
     setPressed(false);
     Animated.parallel([
       Animated.spring(pressScale, { toValue: 1, speed: 20, bounciness: 12, useNativeDriver: true }),
-      Animated.timing(pressOp, { toValue: 0, duration: 250, useNativeDriver: true }),
+      Animated.timing(pressOp,    { toValue: 0, duration: 250,              useNativeDriver: true }),
     ]).start();
   };
 
   return (
     <View style={{ alignItems: 'center' }}>
-      <Animated.View style={[styles.glowRingWrapper, { transform: [{ rotate: ringRotate }] }]} pointerEvents="none">
-        <LinearGradient colors={['#00e5ff', '#7c3aed', '#f59e0b', '#00e5ff']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={{ flex: 1 }} />
-      </Animated.View>
+      {/* glowRingWrapper and rotating LinearGradient removed */}
       <Animated.View style={{ transform: [{ scale: Animated.multiply(breathe, pressScale) }] }}>
         <Pressable onPressIn={onIn} onPressOut={onOut} onPress={onPress} android_ripple={null}>
           <View style={styles.ctaBody}>
@@ -1018,11 +1015,12 @@ function PredictionBanner({ match, index, onPress }: { match: Match; index: numb
 
   // Banner accent varies by type
   const accentColor = type === 'ipl' ? C.orange : C.cyan;
-  const typeLabel   = type === 'ipl'
-    ? '🏏 IPL MATCH'
-    : type === 'india'
-    ? '🇮🇳 INDIA MATCH'
-    : '📍 INDIA VENUE';
+  // const typeLabel   = type === 'ipl'
+  //   ? '🏏 IPL MATCH'
+  //   : type === 'india'
+  //   ? '🇮🇳 INDIA MATCH'
+  //   : '📍 INDIA VENUE';
+  const typeLabel = "LIVE MATCH";
 
   // ensure mutable array for gradient
   const barColor1: string[] = type === 'ipl'
@@ -1209,7 +1207,7 @@ export default function HomeScreen() {
       <StatusBar barStyle="light-content" backgroundColor={C.bg} />
 
       {/* ── Coming Soon Modal ── */}
-      <ComingSoonModal visible={showProModal} onClose={() => setShowProModal(false)} />
+      {/* <ComingSoonModal visible={showProModal} onClose={() => setShowProModal(false)} /> */}
 
       {/* ── AI Predictions Modal ── */}
 
@@ -1218,7 +1216,7 @@ export default function HomeScreen() {
       <LinearGradient colors={['#03080F','#060F1E','#03080F']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={StyleSheet.absoluteFill} />
 
 
-      <HeaderBanner mode= "header" /> 
+      {/* <HeaderBanner mode= "header" />  */}
 
 
       <Animated.View style={[styles.orb, styles.orb1, { transform: [{ translateY: orb1Y }] }]} pointerEvents="none">
@@ -1238,13 +1236,13 @@ export default function HomeScreen() {
         <ScrollView style={{ flex: 1 }} contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
 
           {/* ── HEADER ── */}
-          <View style={styles.header}>
+          {/* <View style={styles.header}>
             <View>
               <Text style={styles.headerEyebrow}>CRICKET PREDICTOR</Text>
               <View style={styles.headerDivider} />
             </View>
             {/* PRO badge — tappable → Coming Soon */}
-            <Pressable
+            {/* <Pressable
               onPress={() => { Vibration.vibrate(10); setShowProModal(true); }}
               android_ripple={null}
             >
@@ -1254,8 +1252,8 @@ export default function HomeScreen() {
                 <AnimatedDot delay={400} />
                 <Text style={styles.headerBadgeText}>PRO</Text>
               </View>
-            </Pressable>
-          </View>
+            </Pressable> */}
+          {/* </View> */} 
 
           {/* ── HERO ── */}
           <Animated.View style={[styles.hero, { transform: [{ translateY: heroY }], opacity: heroOp }]}>
@@ -1324,6 +1322,13 @@ export default function HomeScreen() {
           )}
 
           {/* ── FEATURES ── */}
+
+          <GetStartedButton onPress={() => navigation.navigate('AllMatches')} />
+
+          {/* ── DYNAMIC PREDICTIONS (India / IPL only) ── */}
+          <PredictionsSection matches={matches} onMatchPress={handleMatchPress} />
+
+          {/* ── CTA ── */}
           <View style={styles.section}>
             <View style={styles.sectionHeader}>
               <View style={styles.sectionTitleRow}>
@@ -1343,12 +1348,7 @@ export default function HomeScreen() {
             </View>
           </View>
 
-          {/* ── DYNAMIC PREDICTIONS (India / IPL only) ── */}
-          <PredictionsSection matches={matches} onMatchPress={handleMatchPress} />
-
-          {/* ── CTA ── */}
           <View style={styles.ctaSection}>
-            <GetStartedButton onPress={() => navigation.navigate('AllMatches')} />
             <Text style={styles.ctaCaption}>Join 50,000+ fans predicting smarter</Text>
           </View>
 
@@ -1361,7 +1361,7 @@ export default function HomeScreen() {
         </ScrollView>
       </Animated.View>
 
-      <HeaderBanner mode= "footer"/> 
+      {/* <HeaderBanner mode= "footer"/>  */}
 
     </View>
   );
