@@ -1,6 +1,17 @@
-import messaging from '@react-native-firebase/messaging';
+import {
+  getMessaging,
+  getToken,
+  onMessage,
+  onTokenRefresh,
+  subscribeToTopic,
+  unsubscribeFromTopic,
+  onNotificationOpenedApp,
+  getInitialNotification,
+  requestPermission,
+  AuthorizationStatus,
+} from '@react-native-firebase/messaging';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import notifee ,{AndroidImportance}from '@notifee/react-native';
+import notifee, { AndroidImportance } from '@notifee/react-native';
 
 const FCM_TOKEN_KEY = 'fcm_token';
 
@@ -20,11 +31,12 @@ export const TOPICS = {
 // On Android 13+:  system popup appears asking user to allow notifications.
 export async function initPushNotifications(): Promise<string | null> {
   try {
-    const authStatus = await messaging().requestPermission();
+    const messaging = getMessaging();
+    const authStatus = await requestPermission(messaging);
 
     const enabled =
-      authStatus === messaging.AuthorizationStatus.AUTHORIZED ||
-      authStatus === messaging.AuthorizationStatus.PROVISIONAL;
+      authStatus === AuthorizationStatus.AUTHORIZED ||
+      authStatus === AuthorizationStatus.PROVISIONAL;
 
     if (!enabled) {
       console.log('[FCM] Permission denied by user');
@@ -32,12 +44,12 @@ export async function initPushNotifications(): Promise<string | null> {
     }
 
     // Get this device's unique FCM token
-    const token = await messaging().getToken();
+    const token = await getToken(messaging);
     await AsyncStorage.setItem(FCM_TOKEN_KEY, token);
     console.log('[FCM] Token ready:', token);
 
     // If token ever rotates (reinstall, etc.), save the new one
-    messaging().onTokenRefresh(async newToken => {
+    onTokenRefresh(messaging, async newToken => {
       await AsyncStorage.setItem(FCM_TOKEN_KEY, newToken);
       console.log('[FCM] Token refreshed:', newToken);
     });
@@ -65,9 +77,9 @@ export async function getSavedToken(): Promise<string | null> {
 }
 
 // ─── Subscribe to a topic ──────────────────────────────────────────────────
-export async function subscribeToTopic(topic: string): Promise<void> {
+export async function subscribeToTopicHandler(topic: string): Promise<void> {
   try {
-    await messaging().subscribeToTopic(topic);
+    await subscribeToTopic(getMessaging(), topic);
     console.log(`[FCM] Subscribed → ${topic}`);
   } catch (e) {
     console.error(`[FCM] Subscribe failed for ${topic}:`, e);
@@ -76,9 +88,9 @@ export async function subscribeToTopic(topic: string): Promise<void> {
 
 // ─── Unsubscribe from a topic ──────────────────────────────────────────────
 // Call this if user toggles off a notification preference in settings
-export async function unsubscribeFromTopic(topic: string): Promise<void> {
+export async function unsubscribeFromTopicHandler(topic: string): Promise<void> {
   try {
-    await messaging().unsubscribeFromTopic(topic);
+    await unsubscribeFromTopic(getMessaging(), topic);
     console.log(`[FCM] Unsubscribed → ${topic}`);
   } catch (e) {
     console.error(`[FCM] Unsubscribe failed for ${topic}:`, e);
@@ -96,7 +108,8 @@ export function onForegroundNotification(
     data: Record<string, string>
   ) => void
 ): () => void {
-  return messaging().onMessage(async remoteMessage => {
+  const messaging = getMessaging();
+  return onMessage(messaging, async remoteMessage => {
     const title = remoteMessage.notification?.title ?? 'Cricket Predictor';
     const body  = remoteMessage.notification?.body  ?? '';
     const data  = (remoteMessage.data ?? {}) as Record<string, string>;
@@ -119,8 +132,10 @@ export function onForegroundNotification(
 export function onNotificationTap(
   callback: (data: Record<string, string>) => void
 ): void {
+  const messaging = getMessaging();
+
   // Case 1: app was in background
-  messaging().onNotificationOpenedApp(remoteMessage => {
+  onNotificationOpenedApp(messaging, remoteMessage => {
     console.log('[FCM] Notification tapped (background):', remoteMessage.data);
     if (remoteMessage?.data) {
       callback(remoteMessage.data as Record<string, string>);
@@ -128,7 +143,7 @@ export function onNotificationTap(
   });
 
   // Case 2: app was killed — check on startup
-  messaging().getInitialNotification().then(remoteMessage => {
+  getInitialNotification(messaging).then(remoteMessage => {
     if (remoteMessage?.data) {
       console.log('[FCM] Notification tapped (killed state):', remoteMessage.data);
       callback(remoteMessage.data as Record<string, string>);

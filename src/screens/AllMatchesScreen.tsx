@@ -43,7 +43,7 @@ const FILTERS: {
   bgColor: string;
 }[] = [
     { key: 'all', label: 'All', icon: '🏏', accentColor: '#d4a843', bgColor: '#2e2e10' },
-    { key: 'live', label: 'Live', icon: '🔴', accentColor: '#e84040', bgColor: '#3a1010' },
+    { key: 'live', label: 'Live', icon: '🔴', accentColor: '#40d2e8', bgColor: '#3a1010' },
     { key: 'today', label: 'Today', icon: '📅', accentColor: '#d4a843', bgColor: '#2e2410' },
     { key: 'upcoming', label: 'Upcoming', icon: '⏳', accentColor: '#38c8a0', bgColor: '#0e2420' },
     { key: 'ended', label: 'Ended', icon: '✅', accentColor: '#8aaa6a', bgColor: '#1a2414' },

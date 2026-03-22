@@ -10,7 +10,6 @@ import {
   Animated,
   StyleSheet,
   TouchableOpacity,
-  Alert,
   AppState,
   AppStateStatus,
 } from 'react-native';
@@ -22,15 +21,13 @@ import { fetchMatches } from './src/services/Matches';
 import { Match } from './src/types';
 import {
   initPushNotifications,
-  subscribeToTopic,
+  subscribeToTopicHandler,
   onForegroundNotification,
   onNotificationTap,
   TOPICS,
+  createNotificationChannel,
 } from './src/services/PushNotifications';
-import { recordUserActivity } from './src/services/UserActivity'; // ← NEW
-// import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { createNotificationChannel } from './src/services/PushNotifications';
-
+import { recordUserActivity } from './src/services/UserActivity';
 
 export type RootStackParamList = {
   Home: undefined;
@@ -50,7 +47,6 @@ interface ToastData {
 function NotificationToast({ data, onDismiss }: { data: ToastData; onDismiss: () => void }) {
   const slideY  = useRef(new Animated.Value(-120)).current;
   const opacity = useRef(new Animated.Value(0)).current;
-
 
   useEffect(() => {
     Animated.parallel([
@@ -99,8 +95,6 @@ const toastStyles = StyleSheet.create({
   container: {
     position: 'absolute', top: 8, left: 16, right: 16,
     zIndex: 99999, elevation: 99999,
-      // backgroundColor: 'rgba(10, 22, 40, 0.96)', // ← works in both themes
-
     backgroundColor: 'rgba(10, 22, 40, 0.96)', borderRadius: 14,
     borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)', borderLeftWidth: 3,
     flexDirection: 'row', alignItems: 'center',
@@ -138,13 +132,9 @@ export default function App() {
   const [toast, setToast] = useState<ToastData | null>(null);
 
   // ── Record user activity on open + foreground ─────────────────────────
-  // Firebase Function checks this timestamp before hitting cricapi
-  // If no recent activity → function skips the API call entirely
   useEffect(() => {
-    // Record immediately on app open
     recordUserActivity();
 
-    // Record every time app comes back to foreground
     const sub = AppState.addEventListener('change', (state: AppStateStatus) => {
       if (state === 'active') {
         recordUserActivity();
@@ -170,27 +160,14 @@ export default function App() {
     checkRefetch();
   }, []);
 
-  // ── Temporary debug — remove after confirming token works ─────────────
-  useEffect(() => {
-    import('@react-native-firebase/messaging').then(({ default: messaging }) => {
-      messaging().getToken().then(token => {
-        console.log('MY FCM TOKEN IS:', token);
-        Alert.alert('FCM Token', token);
-      }).catch(e => {
-        console.log('TOKEN ERROR:', e.message);
-        Alert.alert('Token Error', e.message);
-      });
-    });
-  }, []);
-
   // ── Push notifications ────────────────────────────────────────────────
   useEffect(() => {
     createNotificationChannel();
     initPushNotifications();
-    subscribeToTopic(TOPICS.INDIA_MATCHES);
-    subscribeToTopic(TOPICS.IPL_MATCHES);
-    subscribeToTopic(TOPICS.LIVE_MATCHES);
-    subscribeToTopic(TOPICS.PREDICTIONS);
+    subscribeToTopicHandler(TOPICS.INDIA_MATCHES);
+    subscribeToTopicHandler(TOPICS.IPL_MATCHES);
+    subscribeToTopicHandler(TOPICS.LIVE_MATCHES);
+    subscribeToTopicHandler(TOPICS.PREDICTIONS);
 
     const unsubscribeForeground = onForegroundNotification((title, body, data) => {
       console.log('[FCM] Foreground → showing toast:', title, body);

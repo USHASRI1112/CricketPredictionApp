@@ -963,7 +963,7 @@ function GetStartedButton({ onPress }: { onPress: () => void }) {
   };
 
   return (
-    <View style={{ alignItems: 'center' }}>
+    <View style={{ alignItems: 'center',marginBottom :20}}>
       {/* glowRingWrapper and rotating LinearGradient removed */}
       <Animated.View style={{ transform: [{ scale: Animated.multiply(breathe, pressScale) }] }}>
         <Pressable onPressIn={onIn} onPressOut={onOut} onPress={onPress} android_ripple={null}>
@@ -1103,10 +1103,14 @@ function PredictionsSection({
   matches: Match[];
   onMatchPress: (match: Match) => void;
 }) {
+  
   const qualifiedMatches = matches
-    .filter(m => !m.matchEnded)
-    .filter(isIndiaOrIPLMatch)
-    .slice(0, 3);
+  .filter(m => !m.matchEnded)
+  .sort((a, b) => {
+    const aTop = isIndiaOrIPLMatch(a) ? 0 : 1;
+    const bTop = isIndiaOrIPLMatch(b) ? 0 : 1;
+    return aTop - bTop;
+  });
 
   if (qualifiedMatches.length === 0) return null;
 
@@ -1197,7 +1201,6 @@ export default function HomeScreen() {
   
   const liveMatches = matches
     .filter(m => !m.matchEnded && m.status?.toLowerCase().includes('live'))
-    .slice(0, 3);
 
   return (
     <View style={styles.root}>
