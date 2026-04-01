@@ -258,11 +258,11 @@ export default function AllMatchesScreen() {
   const handleMatchPress = (match: Match) => {
     const navigateToMatch = () => console.log('match n', match);
     navigation.navigate('Match', { matchId: match.id, match });
-    if (addRef.current?.showAd) {
-      addRef.current.showAd(navigateToMatch);
-    } else {
-      navigateToMatch();
-    }
+    // if (addRef.current?.showAd) {
+    //   addRef.current.showAd(navigateToMatch);
+    // } else {
+    navigateToMatch();
+    // }
   };
 
   // Visibility flags

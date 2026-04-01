@@ -21,7 +21,7 @@ import { useQuery } from '@tanstack/react-query';
 import { fetchMatchesFromLocal } from '../services/MatchesFromLocal';
 import { Match } from '../types';
 import Add ,{ HeaderBanner ,AppOpenAdManager}from './Add'; 
-
+import Video from 'react-native-video';
 
 type HomeScreenNavigationProp = NativeStackNavigationProp<RootStackParamList, 'Home'>;
 
@@ -1257,6 +1257,18 @@ export default function HomeScreen() {
               </View>
             </Pressable> */}
           {/* </View> */} 
+          
+          <View style={styles.videoBadgeWrap}>
+            <Video
+              source={require('../../assets/trophy_animation.mp4')} //  update path to your file
+              style={styles.videoBadge}
+              muted
+              repeat
+              resizeMode="cover"
+              playInBackground={false}
+              disableFocus
+            />
+          </View>
 
           {/* ── HERO ── */}
           <Animated.View style={[styles.hero, { transform: [{ translateY: heroY }], opacity: heroOp }]}>
@@ -1486,6 +1498,22 @@ const styles = StyleSheet.create({
   // CTA
   ctaSection: { alignItems: 'center', paddingVertical: 20, paddingHorizontal: 20 },
   ctaCaption: { color: 'rgba(255,255,255,0.28)', fontSize: 11, marginTop: 20, letterSpacing: 0.5, textAlign: 'center' },
+
+  videoBadgeWrap: {
+  width: 60,
+  height: 60,
+  borderRadius: 30,
+  overflow: 'hidden',
+  borderWidth: 1.5,
+  borderColor: C.cyanMid,
+  backgroundColor: C.cyanDim,
+},
+videoBadge: {
+  width: 60,
+  height: 60,
+  borderRadius: 30,
+},
+
 
   glowRingWrapper: {
     position: 'absolute', width: BTN_W + 14, height: BTN_H + 14,

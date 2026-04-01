@@ -174,7 +174,7 @@ function ProjectedScoreCard({ match, addRef }: { match: Match, addRef: React.Ref
   const projection = getProjectedScore(currentInning, match.matchType);
   if (!projection) return null;
 
-  const inningLabel = currentInning.inning || 'Current Innings';
+  const inningLabel = 'Current Innings';
   const shortInning = inningLabel.length > 30 ? inningLabel.slice(0, 28) + '…' : inningLabel;
 
   // Get dynamic colors based on match type
@@ -220,7 +220,7 @@ function ProjectedScoreCard({ match, addRef }: { match: Match, addRef: React.Ref
       {/* Header — always visible */}
       <View style={projStyles.header}>
         <View style={projStyles.headerLeft}>
-          <Text style={[projStyles.title, { color: colors.text }]}>📈 PROJECTED SCORE</Text>
+          <Text style={[projStyles.title, { color: colors.text }]}>PROJECTED SCORE📈</Text>
           <View style={[projStyles.titleUnderline, { backgroundColor: colors.accent }]} />
         </View>
         <View style={[projStyles.inningBadge, { backgroundColor: colors.accentLight, borderColor: colors.accentBorder }]}>

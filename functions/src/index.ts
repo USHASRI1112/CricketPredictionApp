@@ -166,9 +166,19 @@ function isIPLMatchHours(): boolean {
   const utcMs = now.getTime() + now.getTimezoneOffset() * 60000;
   const ist   = new Date(utcMs + 5.5 * 60 * 60 * 1000);
   const h     = ist.getHours();
+  const min   = ist.getMinutes();
   const isSun = ist.getDay() === 0;
-  return isSun ? (h >= 16 && h < 23) : (h >= 19 && h < 23);
+
+  // Convert current time to minutes for easier comparison
+  const totalMins = h * 60 + min;
+
+  // Sunday  → 3:30 PM (15:30) to 11:30 PM (23:30)
+  // Weekday → 7:30 PM (19:30) to 11:30 PM (23:30)
+  return isSun
+    ? (totalMins >= 15 * 60 + 30 && totalMins < 23 * 60 + 30)
+    : (totalMins >= 19 * 60 + 30 && totalMins < 23 * 60 + 30);
 }
+
 
 function getNextMidnightUTC(): number {
   const now = new Date();
