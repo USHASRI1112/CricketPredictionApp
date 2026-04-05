@@ -25,7 +25,7 @@ function PulseDot() {
         ]),
       ])
     ).start();
-  }, []);
+  }, [opacity, scale]);
 
   return (
     <View style={dotStyles.wrap}>

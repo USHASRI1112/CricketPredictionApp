@@ -8,26 +8,41 @@ import {
   Pressable,
   Vibration,
   ScrollView,
+  RefreshControl,
   Dimensions,
   StatusBar,
   Modal,
   TouchableOpacity,
+  Image,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../../App';
 import LinearGradient from 'react-native-linear-gradient';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { fetchMatchesFromLocal } from '../services/MatchesFromLocal';
+import { fetchMatches } from '../services/Matches';
+import { subscribeToLiveScores } from '../services/LiveScoreCache';
+import { shouldRefetchMatches } from '../helpers/ShouldRefetchMatches';
 import { Match } from '../types';
-import Add ,{ HeaderBanner ,AppOpenAdManager}from './Add'; 
-import Video from 'react-native-video';
+import Add, { AppOpenAdManager } from './Add';
 
 type HomeScreenNavigationProp = NativeStackNavigationProp<RootStackParamList, 'Home'>;
 
 const { width: W, height: H } = Dimensions.get('window');
 
 // ─── Colour tokens ──────────────────────────────────────────────────────────
+const TROPHY_FRAMES = [
+  require('../assets/trophy_frame_01.png'),
+  require('../assets/trophy_frame_02.png'),
+  require('../assets/trophy_frame_03.png'),
+  require('../assets/trophy_frame_04.png'),
+  require('../assets/trophy_frame_05.png'),
+  require('../assets/trophy_frame_06.png'),
+  require('../assets/trophy_frame_07.png'),
+  require('../assets/trophy_frame_08.png'),
+];
+
 const C = {
   bg:         '#03080F',
   surface:    '#0A1628',
@@ -164,164 +179,9 @@ function getMockPrediction(match: Match): { pct1: number; pct2: number } {
 function getPredictionType(match: Match): 'india' | 'ipl' | 'india_venue' {
   const teamsStr  = (match.teams || []).join(' ').toLowerCase();
   const seriesStr = (match.series_id || match.series || match.name || '').toLowerCase();
-  const venueStr  = (match.venue || '').toLowerCase();
   if (seriesStr.includes('ipl') || seriesStr.includes('indian premier')) return 'ipl';
   if (teamsStr.includes('india') || teamsStr.includes(' ind')) return 'india';
   return 'india_venue';
-}
-
-// ────────────────────────────────────────────────────────────────────────────
-//  COMING SOON MODAL
-// ────────────────────────────────────────────────────────────────────────────
-function ComingSoonModal({ visible, onClose }: { visible: boolean; onClose: () => void }) {
-  const backdropOp  = useRef(new Animated.Value(0)).current;
-  const cardScale   = useRef(new Animated.Value(0.82)).current;
-  const cardOp      = useRef(new Animated.Value(0)).current;
-  const shimmer     = useRef(new Animated.Value(-1)).current;
-  const ring        = useRef(new Animated.Value(0)).current;
-  const floatY      = useRef(new Animated.Value(0)).current;
-
-  useEffect(() => {
-    if (visible) {
-      Vibration.vibrate(18);
-      Animated.parallel([
-        Animated.timing(backdropOp,  { toValue: 1,    duration: 280, useNativeDriver: true }),
-        Animated.spring(cardScale,   { toValue: 1,    speed: 14, bounciness: 9, useNativeDriver: true }),
-        Animated.timing(cardOp,      { toValue: 1,    duration: 280, useNativeDriver: true }),
-      ]).start();
-      // Shimmer loop
-      shimmer.setValue(-1);
-      Animated.loop(
-        Animated.timing(shimmer, { toValue: 2, duration: 2200, easing: Easing.linear, useNativeDriver: true })
-      ).start();
-      // Ring rotation
-      Animated.loop(
-        Animated.timing(ring, { toValue: 1, duration: 6000, easing: Easing.linear, useNativeDriver: true })
-      ).start();
-      // Floating badge bounce
-      Animated.loop(Animated.sequence([
-        Animated.timing(floatY, { toValue: -8, duration: 1200, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
-        Animated.timing(floatY, { toValue: 0,  duration: 1200, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
-      ])).start();
-    } else {
-      Animated.parallel([
-        Animated.timing(backdropOp, { toValue: 0, duration: 200, useNativeDriver: true }),
-        Animated.timing(cardScale,  { toValue: 0.82, duration: 200, useNativeDriver: true }),
-        Animated.timing(cardOp,     { toValue: 0, duration: 200, useNativeDriver: true }),
-      ]).start();
-      shimmer.stopAnimation();
-      ring.stopAnimation();
-      floatY.stopAnimation();
-      // Reset for next open
-      cardScale.setValue(0.82);
-      cardOp.setValue(0);
-    }
-  }, [visible]);
-
-  const ringRotate  = ring.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '360deg'] });
-  const shimmerTx   = shimmer.interpolate({ inputRange: [-1, 2], outputRange: [-160, 320] });
-
-  const PERKS = [
-    { icon: '🤖', text: 'Gen-AI Match Predictions' },
-    { icon: '📊', text: 'Advanced Win Probability' },
-    { icon: '🔔', text: 'Live Score Alerts' },
-    { icon: '📈', text: 'Player Form Deep Dives' },
-    { icon: '🏆', text: 'Fantasy Team Optimizer' },
-  ];
-
-  return (
-    <Modal transparent visible={visible} animationType="none" onRequestClose={onClose}>
-      {/* Backdrop */}
-      <Animated.View style={[csStyles.backdrop, { opacity: backdropOp }]}>
-        <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
-      </Animated.View>
-
-      {/* Card */}
-      <View style={csStyles.centerer} pointerEvents="box-none">
-        <Animated.View style={[csStyles.card, { transform: [{ scale: cardScale }], opacity: cardOp }]}>
-          <LinearGradient
-            colors={['#040e1c', '#071828', '#040e1c']}
-            start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
-            style={StyleSheet.absoluteFill}
-          />
-
-          {/* Rotating gradient ring behind emoji */}
-          <View style={csStyles.orbWrap}>
-            <Animated.View style={[csStyles.ringOuter, { transform: [{ rotate: ringRotate }] }]}>
-              <LinearGradient
-                colors={['#00e5ff', '#7c3aed', '#f59e0b', '#00e5ff']}
-                start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
-                style={{ flex: 1, borderRadius: 60 }}
-              />
-            </Animated.View>
-            <View style={csStyles.ringInner}>
-              <LinearGradient colors={['#071828', '#040e1c']} style={{ flex: 1, borderRadius: 52, justifyContent: 'center', alignItems: 'center' }}>
-                <Animated.Text style={[csStyles.bigEmoji, { transform: [{ translateY: floatY }] }]}>
-                  👑
-                </Animated.Text>
-              </LinearGradient>
-            </View>
-          </View>
-
-          {/* Top shimmer line */}
-          <View style={csStyles.topLine}>
-            <LinearGradient colors={[C.cyan, C.gold, C.cyan]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={{ flex: 1, height: 1 }} />
-          </View>
-
-          {/* Shimmer sweep over card */}
-          <Animated.View style={[csStyles.shimmerStrip, { transform: [{ translateX: shimmerTx }] }]} pointerEvents="none">
-            <LinearGradient
-              colors={['rgba(255,255,255,0)', 'rgba(255,255,255,0.06)', 'rgba(255,255,255,0)']}
-              start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
-              style={StyleSheet.absoluteFill}
-            />
-          </Animated.View>
-
-          {/* Title */}
-          <View style={csStyles.titleRow}>
-            <Text style={csStyles.proLabel}>PRO MEMBERSHIP</Text>
-          </View>
-          <Text style={csStyles.comingSoonText}>Coming Soon</Text>
-          <Text style={csStyles.subtitle}>
-            We're building something extraordinary for cricket fans. Be the first to know when PRO launches.
-          </Text>
-
-          {/* Divider */}
-          <View style={csStyles.divider} />
-
-          {/* Perks list */}
-          <Text style={csStyles.perksTitle}>WHAT'S INCLUDED</Text>
-          {PERKS.map((p, i) => (
-            <View key={i} style={csStyles.perkRow}>
-              <View style={csStyles.perkIconWrap}>
-                <Text style={csStyles.perkIcon}>{p.icon}</Text>
-              </View>
-              <Text style={csStyles.perkText}>{p.text}</Text>
-              <Text style={csStyles.perkLock}>🔒</Text>
-            </View>
-          ))}
-
-          {/* Divider */}
-          <View style={csStyles.divider} />
-
-          {/* Notify CTA */}
-          <TouchableOpacity style={csStyles.notifyBtn} onPress={onClose} activeOpacity={0.8}>
-            <LinearGradient
-              colors={['#0d1b2a', '#1b3a5c']}
-              start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
-              style={StyleSheet.absoluteFill}
-            />
-            <Text style={csStyles.notifyText}>🔔  NOTIFY ME AT LAUNCH</Text>
-          </TouchableOpacity>
-
-          {/* Dismiss */}
-          <TouchableOpacity style={csStyles.dismissBtn} onPress={onClose}>
-            <Text style={csStyles.dismissText}>Maybe later</Text>
-          </TouchableOpacity>
-        </Animated.View>
-      </View>
-    </Modal>
-  );
 }
 
 // ─── StatCard with roll-up counter animation ──────────────────────────────────
@@ -375,7 +235,7 @@ function StatCard({ label, targetValue, displaySuffix, icon, color, entryDelay, 
       clearTimeout(timerId);
       clearInterval(intervalId);
     };
-  }, [targetValue]);
+  }, [targetValue, displaySuffix, entryDelay, isMatches, opacity, scale, translateY]);
 
   return (
     <Animated.View style={{ transform: [{ translateY }, { scale }], opacity, flex: 1 }}>
@@ -404,7 +264,7 @@ function AnimatedDot({ delay }: { delay: number }) {
         Animated.timing(op, { toValue: 0.2, duration: 600, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
       ])
     ).start();
-  }, []);
+  }, [delay, op]);
   return <Animated.View style={[styles.dot, { opacity: op }]} />;
 }
 
@@ -449,7 +309,7 @@ function AIPredictionsModal({ visible, onClose }: { visible: boolean; onClose: (
       scanLine.stopAnimation();
       pulse.stopAnimation();
     }
-  }, [visible]);
+  }, [visible, backdropOp, cardOp, cardY, pulse, scanLine]);
 
   const scanTranslateY = scanLine.interpolate({ inputRange: [0, 1], outputRange: [0, 340] });
 
@@ -907,7 +767,7 @@ function FeatureCard({ item, index, onPress }: any) {
       Animated.spring(scaleA, { toValue: 1, delay: 800 + index * 100, speed: 12, bounciness: 7, useNativeDriver: true }),
       Animated.timing(op, { toValue: 1, duration: 400, delay: 800 + index * 100, useNativeDriver: true }),
     ]).start();
-  }, []);
+  }, [index, op, scaleA]);
 
   const onIn  = () => { setPressed(true);  Vibration.vibrate(10); Animated.spring(tileScale, { toValue: 0.95, speed: 40, bounciness: 0, useNativeDriver: true }).start(); };
   const onOut = () => { setPressed(false); Animated.spring(tileScale, { toValue: 1, speed: 20, bounciness: 8, useNativeDriver: true }).start(); };
@@ -943,7 +803,7 @@ function GetStartedButton({ onPress }: { onPress: () => void }) {
     ])).start();
     Animated.loop(Animated.timing(shimmer, { toValue: 2, duration: 2600, easing: Easing.linear, useNativeDriver: true })).start();
     // ← ring animation removed
-  }, []);
+  }, [breathe, shimmer]);
 
   const shimmerTx = shimmer.interpolate({ inputRange: [-1, 2], outputRange: [-220, 440] });
 
@@ -1005,7 +865,7 @@ function PredictionBanner({ match, index, onPress }: { match: Match; index: numb
       Animated.timing(slideY, { toValue: 0, duration: 500, delay: index * 150, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
       Animated.timing(op,     { toValue: 1, duration: 500, delay: index * 150, useNativeDriver: true }),
     ]).start();
-  }, []);
+  }, [index, op, slideY]);
 
   const { pct1, pct2 } = getMockPrediction(match);
   const type            = getPredictionType(match);
@@ -1104,12 +964,19 @@ function PredictionsSection({
   onMatchPress: (match: Match) => void;
 }) {
   
+  const predictionPriority = (match: Match): number => {
+    if (!isIndiaOrIPLMatch(match)) return 3;
+    const type = getPredictionType(match);
+    if (type === 'ipl') return 0;
+    if (type === 'india') return 1;
+    if (type === 'india_venue') return 2;
+    return 3;
+  };
+
   const qualifiedMatches = matches
   .filter(m => !m.matchEnded)
   .sort((a, b) => {
-    const aTop = isIndiaOrIPLMatch(a) ? 0 : 1;
-    const bTop = isIndiaOrIPLMatch(b) ? 0 : 1;
-    return aTop - bTop;
+    return predictionPriority(a) - predictionPriority(b);
   });
 
   if (qualifiedMatches.length === 0) return null;
@@ -1143,8 +1010,8 @@ function PredictionsSection({
 // ────────────────────────────────────────────────────────────────────────────
 export default function HomeScreen() {
   const navigation = useNavigation<HomeScreenNavigationProp>();
-  const [showProModal, setShowProModal] = useState(false);
-  const [showAIModal,  setShowAIModal]  = useState(false);
+  const [showAIModal, setShowAIModal] = useState(false);
+  const [trophyFrameIndex, setTrophyFrameIndex] = useState(0);
   const dynamicStats = useDynamicStats();
   const addRef = useRef<{ showAd?: (cb?: () => void) => void } | null>(null);
 
@@ -1170,6 +1037,13 @@ export default function HomeScreen() {
       Animated.timing(orb2, { toValue: 1, duration: 5000, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
       Animated.timing(orb2, { toValue: 0, duration: 5000, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
     ])).start();
+  }, [heroOp, heroY, orb1, orb2, pageOp]);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setTrophyFrameIndex(prev => (prev + 1) % TROPHY_FRAMES.length);
+    }, 120);
+    return () => clearInterval(interval);
   }, []);
 
   const orb1Y = orb1.interpolate({ inputRange: [0, 1], outputRange: [0, -18] });
@@ -1182,6 +1056,42 @@ export default function HomeScreen() {
     queryFn: fetchMatchesFromLocal,
     refetchOnWindowFocus: false,
   });
+
+  const queryClient = useQueryClient();
+  const [isRefreshing, setIsRefreshing] = useState(false);
+
+  const fetchMutation = useMutation<Match[], Error, void>({
+    mutationFn: fetchMatches,
+    onSuccess: (data: Match[]) => {
+      queryClient.setQueryData(['ALL_MATCHES', 'storage'], data);
+      setIsRefreshing(false);
+    },
+    onError: (err) => {
+      console.error('Error refetching matches:', err);
+      setIsRefreshing(false);
+    },
+  });
+
+  const handleRefresh = () => {
+    setIsRefreshing(true);
+    fetchMutation.mutate();
+  };
+
+  // Periodic refetch in premium mode
+  useEffect(() => {
+    // console.log('[HomeScreen] Setting up periodic refetch');
+    const interval = setInterval(async () => {
+      // console.log('[HomeScreen] Periodic check');
+      const should = await shouldRefetchMatches();
+      // console.log('[HomeScreen] Should refetch:', should, 'isRefreshing:', isRefreshing);
+      if (should && !isRefreshing) {
+        // console.log('[HomeScreen] Triggering refetch');
+        handleRefresh();
+      }
+    }, 60000); // Check every minute
+
+    return () => clearInterval(interval);
+  }, [isRefreshing]);
 
 
   const handleMatchPress = (match: Match) => {
@@ -1196,6 +1106,37 @@ export default function HomeScreen() {
 
 
   const matches: Match[] = allMatches || [];
+
+  useEffect(() => {
+    if (matches.length === 0) { return; }
+
+    const unsub = subscribeToLiveScores((freshMatches) => {
+      if (!freshMatches || freshMatches.length === 0) { return; }
+
+      queryClient.setQueryData<Match[] | null>(['ALL_MATCHES', 'storage'], (current) => {
+        if (!current || current.length === 0) {
+          return freshMatches;
+        }
+
+        const merged = new Map(current.map(m => [m.id, m]));
+        freshMatches.forEach(fresh => {
+          const existing = merged.get(fresh.id);
+          merged.set(fresh.id, {
+            ...existing,
+            ...fresh,
+            status: fresh.status ?? existing?.status,
+            score: fresh.score ?? existing?.score,
+            matchEnded: fresh.matchEnded ?? existing?.matchEnded,
+            matchStarted: fresh.matchStarted ?? existing?.matchStarted,
+          });
+        });
+
+        return Array.from(merged.values());
+      });
+    });
+
+    return () => unsub();
+  }, [matches.length, queryClient]);
 
   // Live matches for the mini-scorecard section (top 3)
   
@@ -1236,38 +1177,26 @@ export default function HomeScreen() {
       </View>
 
       <Animated.View style={{ flex: 1, opacity: pageOp }}>
-        <ScrollView style={{ flex: 1 }} contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
+        <ScrollView 
+          style={{ flex: 1 }} 
+          contentContainerStyle={styles.scroll} 
+          showsVerticalScrollIndicator={false}
+          refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={handleRefresh} />}
+        >
 
           {/* ── HEADER ── */}
-          {/* <View style={styles.header}>
+          <View style={styles.header}>
             <View>
               <Text style={styles.headerEyebrow}>CRICKET PREDICTOR</Text>
               <View style={styles.headerDivider} />
             </View>
-            {/* PRO badge — tappable → Coming Soon */}
-            {/* <Pressable
-              onPress={() => { Vibration.vibrate(10); setShowProModal(true); }}
-              android_ripple={null}
-            >
-              <View style={styles.headerBadge}>
-                <AnimatedDot delay={0} />
-                <AnimatedDot delay={200} />
-                <AnimatedDot delay={400} />
-                <Text style={styles.headerBadgeText}>PRO</Text>
-              </View>
-            </Pressable> */}
-          {/* </View> */} 
-          
-          <View style={styles.videoBadgeWrap}>
-            <Video
-              source={require('../../assets/trophy_animation.mp4')} //  update path to your file
-              style={styles.videoBadge}
-              muted
-              repeat
-              resizeMode="cover"
-              playInBackground={false}
-              disableFocus
-            />
+            <View style={[styles.videoBadgeWrap, styles.headerVideoWrap]} pointerEvents="none">
+              <Image
+                source={TROPHY_FRAMES[trophyFrameIndex]}
+                style={styles.videoBadge}
+                resizeMode="cover"
+              />
+            </View>
           </View>
 
           {/* ── HERO ── */}
@@ -1500,19 +1429,31 @@ const styles = StyleSheet.create({
   ctaCaption: { color: 'rgba(255,255,255,0.28)', fontSize: 11, marginTop: 20, letterSpacing: 0.5, textAlign: 'center' },
 
   videoBadgeWrap: {
-  width: 60,
-  height: 60,
-  borderRadius: 30,
-  overflow: 'hidden',
-  borderWidth: 1.5,
-  borderColor: C.cyanMid,
-  backgroundColor: C.cyanDim,
-},
-videoBadge: {
-  width: 60,
-  height: 60,
-  borderRadius: 30,
-},
+    width: 84,
+    height: 84,
+    borderRadius: 42,
+    overflow: 'hidden',
+    borderWidth: 1.5,
+    borderColor: 'rgba(0,229,255,0.75)',
+    backgroundColor: 'rgba(7,29,53,0.96)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: C.cyan,
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.18,
+    shadowRadius: 20,
+    elevation: 12,
+  },
+  headerVideoWrap: {
+    alignSelf: 'flex-end',
+    marginRight: 6,
+  },
+  videoBadge: {
+    width: 84,
+    height: 84,
+    borderRadius: 42,
+    backgroundColor: 'transparent',
+  },
 
 
   glowRingWrapper: {
@@ -1547,82 +1488,3 @@ videoBadge: {
   footerText: { color: 'rgba(255,255,255,0.18)', fontSize: 9, letterSpacing: 2 },
 });
 
-const csStyles = StyleSheet.create({
-  backdrop: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0,0,0,0.78)',
-  },
-  centerer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingHorizontal: 24,
-  },
-  card: {
-    width: '100%',
-    borderRadius: 24,
-    overflow: 'hidden',
-    borderWidth: 1,
-    borderColor: 'rgba(0,229,255,0.2)',
-    padding: 24,
-    paddingTop: 32,
-    alignItems: 'center',
-  },
-  topLine: { position: 'absolute', top: 0, left: 0, right: 0, height: 1 },
-  shimmerStrip: { ...StyleSheet.absoluteFillObject, width: 100 },
-
-  orbWrap: { alignItems: 'center', justifyContent: 'center', marginBottom: 20, width: 110, height: 110 },
-  ringOuter: { position: 'absolute', width: 110, height: 110, borderRadius: 55, overflow: 'hidden', opacity: 0.9 },
-  ringInner: { width: 100, height: 100, borderRadius: 50, overflow: 'hidden' },
-  bigEmoji: { fontSize: 44 },
-
-  titleRow: { alignItems: 'center', marginBottom: 6 },
-  proLabel: {
-    color: C.gold, fontSize: 10, fontWeight: '900', letterSpacing: 4,
-  },
-  comingSoonText: {
-    color: C.white, fontSize: 30, fontWeight: '900',
-    letterSpacing: -0.5, marginBottom: 10,
-    textShadowColor: 'rgba(0,229,255,0.3)',
-    textShadowOffset: { width: 0, height: 2 },
-    textShadowRadius: 10,
-  },
-  subtitle: {
-    color: 'rgba(255,255,255,0.45)', fontSize: 13, textAlign: 'center',
-    lineHeight: 20, letterSpacing: 0.2, marginBottom: 20,
-  },
-  divider: {
-    width: '100%', height: 1,
-    backgroundColor: 'rgba(255,255,255,0.06)',
-    marginBottom: 16,
-  },
-  perksTitle: {
-    color: 'rgba(255,255,255,0.25)', fontSize: 9, fontWeight: '800',
-    letterSpacing: 3, marginBottom: 12, alignSelf: 'flex-start',
-  },
-  perkRow: {
-    flexDirection: 'row', alignItems: 'center',
-    width: '100%', marginBottom: 10, gap: 10,
-  },
-  perkIconWrap: {
-    width: 32, height: 32, borderRadius: 8,
-    backgroundColor: 'rgba(255,255,255,0.05)',
-    alignItems: 'center', justifyContent: 'center',
-    borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)',
-  },
-  perkIcon: { fontSize: 16 },
-  perkText: { color: 'rgba(255,255,255,0.6)', fontSize: 13, fontWeight: '600', flex: 1 },
-  perkLock: { fontSize: 12, opacity: 0.35 },
-
-  notifyBtn: {
-    width: '100%', height: 52, borderRadius: 14,
-    overflow: 'hidden', alignItems: 'center', justifyContent: 'center',
-    borderWidth: 1, borderColor: 'rgba(0,229,255,0.3)',
-    marginBottom: 12,
-  },
-  notifyText: {
-    color: C.cyan, fontSize: 13, fontWeight: '800', letterSpacing: 2,
-  },
-  dismissBtn: { paddingVertical: 8 },
-  dismissText: { color: 'rgba(255,255,255,0.25)', fontSize: 12, letterSpacing: 0.5 },
-});

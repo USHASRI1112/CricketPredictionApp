@@ -8,7 +8,7 @@ const CricketApiSubPath = {
   SERIES_INFO: 'series_info',
 };
 
-const API_KEY = '46e9b267-ff97-43e0-a615-2f5ce700571c';
+const API_KEY = '5de3a03b-2e22-442c-85cc-d03e80e45715';
 
 const PredictionApiBaseUrl = 'https://predictmatch-bln23it7tq-uc.a.run.app';
 

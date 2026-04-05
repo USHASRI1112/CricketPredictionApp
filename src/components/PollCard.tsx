@@ -28,11 +28,7 @@ import { Match } from '../types'; // adjust path if needed
 // ─── Colour tokens (keep in sync with MatchScreen) ───────────────────────────
 const GOLD   = '#F5C518';
 const CYAN   = '#00E5FF';
-const GREEN  = '#00E096';
-const RED    = '#FF4560';
 const WHITE  = '#FFFFFF';
-const MUTED  = '#64748b';
-const BG     = '#0A1628';
 const BORDER = 'rgba(255,255,255,0.08)';
 
 // ─── Seeded PRNG (mulberry32) ─────────────────────────────────────────────────
@@ -53,7 +49,7 @@ function mulberry32(seed: number) {
  * Base votes: seeded from matchId → team1 gets 420–1800, team2 gets 380–1650
  * Each 30-min slot adds a seeded increment (8–35 per slot per team).
  */
-function computeVotes(matchId: string, team1: string, team2: string) {
+function computeVotes(matchId: string, _team1: string, _team2: string) {
   // Stable hash from matchId
   const idHash = matchId
     .split('')
@@ -140,7 +136,7 @@ export default function PollCard({ match }: PollCardProps) {
       setBase(computeVotes(matchId, team1, team2));
     }, msUntilNextSlot);
     return () => clearTimeout(timer);
-  }, [matchId, base]);
+  }, [matchId, team1, team2]);
 
   // ── Animate bars when revealed ─────────────────────────────────────────────
   const animateBars = useCallback((pct1: number) => {
@@ -183,7 +179,7 @@ export default function PollCard({ match }: PollCardProps) {
       const pct1  = total > 0 ? (base.v1 + extraV1) / total : 0.5;
       animateBars(pct1);
     }
-  }, [revealed]);
+  }, [revealed, animateBars, base, extraV1, extraV2]);
 
   // ── Handle vote ───────────────────────────────────────────────────────────
   const handleVote = async (team: 1 | 2) => {

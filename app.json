@@ -1,6 +1,6 @@
 {
   "name": "CricketPredictionApp",
-  "displayName": "CricketPredictionApp",
+  "displayName": "Today Cricket Prediction",
    "react-native-google-mobile-ads": {
     "android_app_id": "ca-app-pub-3940256099942544/1033173712"
   }

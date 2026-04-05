@@ -10,8 +10,8 @@ export const saveMatchesToStorage = async (matches: Match[]) => {
       [LAST_FETCH_TIME_KEY, timestamp],
     ]);
     const updatedMatches = await AsyncStorage.getItem(STORAGE_KEY);
-    console.log('Saved matches and timestamp to storage',updatedMatches);
+    // console.log('Saved matches and timestamp to storage',updatedMatches);
   } catch (error) {
-    console.log('Failed to save matches:', error);
+    // console.log('Failed to save matches:', error);
   }
 };

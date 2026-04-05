@@ -13,6 +13,7 @@ import {
   AppState,
   AppStateStatus,
 } from 'react-native';
+import { MobileAds } from 'react-native-google-mobile-ads';
 import { shouldRefetchMatches } from './src/helpers/ShouldRefetchMatches';
 import AllMatchesScreen from './src/screens/AllMatchesScreen';
 import HomeScreen from './src/screens/HomeScreen';
@@ -131,6 +132,11 @@ export default function App() {
   const navigationRef = useRef<NavigationContainerRef<RootStackParamList>>(null);
   const [toast, setToast] = useState<ToastData | null>(null);
 
+  // ── Initialize AdMob ──────────────────────────────────────────────────
+  useEffect(() => {
+    MobileAds().initialize();
+  }, []);
+
   // ── Record user activity on open + foreground ─────────────────────────
   useEffect(() => {
     recordUserActivity();
@@ -154,48 +160,73 @@ export default function App() {
           queryClient.setQueryData(['ALL_MATCHES', 'storage'], data);
         }
       } catch (e) {
-        console.warn('Error during startup refetch check', e);
+        console.warn('Error during refetch check', e);
       }
     };
+    
     checkRefetch();
+    
+    // Periodic refetch every 5 minutes
+    const interval = setInterval(checkRefetch, 5 * 60 * 1000);
+    
+    return () => clearInterval(interval);
   }, []);
 
   // ── Push notifications ────────────────────────────────────────────────
   useEffect(() => {
-    createNotificationChannel();
-    initPushNotifications();
-    subscribeToTopicHandler(TOPICS.INDIA_MATCHES);
-    subscribeToTopicHandler(TOPICS.IPL_MATCHES);
-    subscribeToTopicHandler(TOPICS.LIVE_MATCHES);
-    subscribeToTopicHandler(TOPICS.PREDICTIONS);
+    let unsubscribeForeground: (() => void) | undefined;
+    let unsubscribeTap: (() => void) | undefined;
 
-    const unsubscribeForeground = onForegroundNotification((title, body, data) => {
-      console.log('[FCM] Foreground → showing toast:', title, body);
-      setToast({ title, body, type: resolveToastType(title, data) });
-    });
-
-    onNotificationTap((data) => {
-      if (!data) { return; }
-      if (data.screen === 'Match' && data.matchId) {
-        const cached = queryClient.getQueryData<Match[]>(['ALL_MATCHES', 'storage']);
-        const match  = cached?.find(m => m.id === data.matchId);
-        if (match) {
-          navigationRef.current?.navigate('Match', { matchId: data.matchId, match });
-        } else {
-          navigationRef.current?.navigate('AllMatches');
+    async function setupNotifications() {
+      try {
+        await createNotificationChannel();
+        const token = await initPushNotifications();
+        if (!token) {
+          console.warn('[FCM] Permission denied or token unavailable; skipping topic subscriptions');
+          return;
         }
-      } else if (data.screen === 'AllMatches') {
-        navigationRef.current?.navigate('AllMatches');
-      } else {
-        navigationRef.current?.navigate('Home');
-      }
-    });
 
-    return () => { unsubscribeForeground(); };
+        await subscribeToTopicHandler(TOPICS.INDIA_MATCHES);
+        await subscribeToTopicHandler(TOPICS.IPL_MATCHES);
+        await subscribeToTopicHandler(TOPICS.LIVE_MATCHES);
+        await subscribeToTopicHandler(TOPICS.PREDICTIONS);
+
+        unsubscribeForeground = onForegroundNotification((title, body, data) => {
+          // console.log('[FCM] Foreground → showing toast:', title, body);
+          setToast({ title, body, type: resolveToastType(title, data) });
+        });
+
+        unsubscribeTap = onNotificationTap((data) => {
+          if (!data) { return; }
+          if (data.screen === 'Match' && data.matchId) {
+            const cached = queryClient.getQueryData<Match[]>(['ALL_MATCHES', 'storage']);
+            const match  = cached?.find(m => m.id === data.matchId);
+            if (match) {
+              navigationRef.current?.navigate('Match', { matchId: data.matchId, match });
+            } else {
+              navigationRef.current?.navigate('AllMatches');
+            }
+          } else if (data.screen === 'AllMatches') {
+            navigationRef.current?.navigate('AllMatches');
+          } else {
+            navigationRef.current?.navigate('Home');
+          }
+        });
+      } catch (e) {
+        console.error('[FCM] Setup failed:', e);
+      }
+    }
+
+    setupNotifications();
+
+    return () => {
+      unsubscribeForeground?.();
+      unsubscribeTap?.();
+    };
   }, []);
 
   return (
-    <View style={{ flex: 1 }}>
+    <View style={{ flex: 1, backgroundColor: '#03080F' }}>
       <StatusBar barStyle="light-content" backgroundColor="#03080F" />
 
       <QueryClientProvider client={queryClient}>
@@ -203,9 +234,10 @@ export default function App() {
           <Stack.Navigator
             initialRouteName="Home"
             screenOptions={{
-              headerStyle:      { backgroundColor: isDarkMode ? '#1f2937' : '#ffffff' },
-              headerTintColor:  isDarkMode ? '#ffffff' : '#000000',
-              headerTitleStyle: { fontWeight: 'bold' },
+              headerStyle:      { backgroundColor: '#03080F' },
+              headerTintColor:  '#ffffff',
+              headerTitleStyle: { fontWeight: 'bold', color: '#ffffff' },
+              contentStyle:     { backgroundColor: '#03080F' },
             }}
           >
             <Stack.Screen

@@ -5,23 +5,23 @@ import {
   useImperativeHandle,
   useRef,
 } from 'react';
-import { InterstitialAd, AdEventType,BannerAd, BannerAdSize,TestIds,NativeAd,
+import { InterstitialAd, AdEventType,BannerAd, BannerAdSize,NativeAd,
   NativeAdView,
   NativeAsset,
   NativeAssetType,
   NativeMediaView,AppOpenAd,RewardedAd, RewardedAdEventType, 
    } from 'react-native-google-mobile-ads';
 import {View,Text, StyleSheet} from 'react-native';
-export const adUnitId = 'ca-app-pub-3940256099942544/1033173712'; 
-//   : "YOUR_REAL_INTERSTITIAL_ID";
+// Google Test Ad Unit IDs - Replace with production IDs before release
+export const adUnitId = 'ca-app-pub-3940256099942544/1033173712'; // Interstitial
 
+const bannerAdUnit = 'ca-app-pub-3940256099942544/6300978111'; // Banner
 
-const bannerAdUnit = TestIds.BANNER;
+const nativeAdUnit = 'ca-app-pub-3940256099942544/2247696110'; // Native
 
-const nativeAdUnit = TestIds.NATIVE;
+const appOpenUnitId = 'ca-app-pub-3940256099942544/5575463023'; // App Open
 
-
-const appOpenUnitId = TestIds.APP_OPEN;
+const rewardedAdUnit = 'ca-app-pub-3940256099942544/5224354917'; // Rewarded
 
 const appOpenAd = AppOpenAd.createForAdRequest(appOpenUnitId, {
   requestNonPersonalizedAdsOnly: true,
@@ -36,7 +36,7 @@ export function AppOpenAdManager() {
       () => {
         if (hasShownRef.current) return; // already shown once, don't show again
         hasShownRef.current = true;
-        console.log("App Open Ad Loaded");
+        // console.log("App Open Ad Loaded");
         appOpenAd.show();
       }
     );
@@ -44,7 +44,7 @@ export function AppOpenAdManager() {
     const closedListener = appOpenAd.addAdEventListener(
       AdEventType.CLOSED,
       () => {
-        console.log("App Open Ad Closed");
+        // console.log("App Open Ad Closed");
         // don't reload — we only want it once per app open
       }
     );
@@ -69,8 +69,8 @@ export function HeaderBanner({ mode }: { mode: 'header' | 'footer' }) {
       <BannerAd
         unitId={bannerAdUnit}
         size={BannerAdSize.ANCHORED_ADAPTIVE_BANNER}
-        onAdLoaded={() => console.log("Banner loaded")}
-        onAdFailedToLoad={(e) => console.log("Banner failed", e)}
+        onAdLoaded={() => {/* console.log("Banner loaded") */}}
+        onAdFailedToLoad={(e) => {/* console.log("Banner failed", e) */}}
       />
     </View>
   );
@@ -82,7 +82,7 @@ function RewardAdd(_: any, ref: any) {
   const callbacksRef = useRef<Array<() => void>>([]);
 
   if (!rewardedRef.current) {
-    rewardedRef.current = RewardedAd.createForAdRequest(TestIds.REWARDED, {
+    rewardedRef.current = RewardedAd.createForAdRequest(rewardedAdUnit, {
       requestNonPersonalizedAdsOnly: true,
     });
   }
@@ -107,14 +107,14 @@ function RewardAdd(_: any, ref: any) {
       RewardedAdEventType.LOADED,
       () => {
         loadedRef.current = true;
-        console.log('✅ Rewarded Ad Loaded');
+        // console.log('✅ Rewarded Ad Loaded');
       },
     );
 
     const unsubscribeEarned = ad.addAdEventListener(
       RewardedAdEventType.EARNED_REWARD,
       (reward) => {
-        console.log('🎁 Reward earned:', reward);
+        // console.log('🎁 Reward earned:', reward);
         // fire callbacks when reward is earned
         const cbs = callbacksRef.current.splice(0);
         cbs.forEach(fn => fn());
@@ -125,7 +125,7 @@ function RewardAdd(_: any, ref: any) {
       AdEventType.CLOSED,
       () => {
         loadedRef.current = false;
-        console.log('Rewarded Ad Closed');
+        // console.log('Rewarded Ad Closed');
         ad.load(); // preload next
       },
     );
@@ -133,7 +133,7 @@ function RewardAdd(_: any, ref: any) {
     const unsubscribeError = ad.addAdEventListener(
       AdEventType.ERROR,
       (error) => {
-        console.log('❌ Rewarded Ad Error:', error);
+        // console.log('❌ Rewarded Ad Error:', error);
         // fire callbacks on error so user isn't stuck
         const cbs = callbacksRef.current.splice(0);
         cbs.forEach(fn => fn());
@@ -154,37 +154,57 @@ function RewardAdd(_: any, ref: any) {
 }
 export function NativeAdCard() {
   const [nativeAd, setNativeAd] = useState<NativeAd | null>(null);
+  const [error, setError] = useState(false);
 
   useEffect(() => {
-    NativeAd.createForAdRequest(nativeAdUnit)
-      .then(setNativeAd)
-      .catch(console.error);
+    let isMounted = true;
+
+    const loadAd = async () => {
+      try {
+        const ad = await NativeAd.createForAdRequest(nativeAdUnit);
+        if (isMounted) {
+          setNativeAd(ad);
+          setError(false);
+        }
+      } catch (err) {
+        // console.error('Native ad failed to load:', err);
+        if (isMounted) {
+          setError(true);
+          setNativeAd(null);
+        }
+      }
+    };
+
+    loadAd();
+
+    return () => {
+      isMounted = false;
+    };
   }, []);
 
-  if (!nativeAd) return null;
+  // Don't render anything if ad failed to load
+  if (error || !nativeAd) {
+    return null;
+  }
 
   return (
-   <NativeAdView nativeAd={nativeAd} style={styles.nativeContainer}>
-
-  <NativeMediaView style={styles.media} />
-
-  <View style={styles.textContent}>
-    <Text style={styles.adLabel}>SPONSORED</Text>
-
-    <NativeAsset assetType={NativeAssetType.HEADLINE}>
-      <Text style={styles.title} />
-    </NativeAsset>
-
-    <NativeAsset assetType={NativeAssetType.BODY}>
-      <Text style={styles.body} />
-    </NativeAsset>
-
-    <NativeAsset assetType={NativeAssetType.CALL_TO_ACTION}>
-      <Text style={styles.cta} />
-    </NativeAsset>
-  </View>
-
-</NativeAdView>
+    <View style={styles.nativeContainer}>
+      <NativeAdView nativeAd={nativeAd}>
+        <NativeMediaView style={styles.media} />
+        <View style={styles.textContent}>
+          <Text style={styles.adLabel}>SPONSORED</Text>
+          <NativeAsset assetType={NativeAssetType.HEADLINE}>
+            <Text style={styles.title} />
+          </NativeAsset>
+          <NativeAsset assetType={NativeAssetType.BODY}>
+            <Text style={styles.body} />
+          </NativeAsset>
+          <NativeAsset assetType={NativeAssetType.CALL_TO_ACTION}>
+            <Text style={styles.cta} />
+          </NativeAsset>
+        </View>
+      </NativeAdView>
+    </View>
   );
 }
 
@@ -218,14 +238,14 @@ function Add(_: any, ref: any) {
       AdEventType.LOADED,
       () => {
         loadedRef.current = true;
-        console.log('✅ Ad Loaded');
+        // console.log('✅ Ad Loaded');
       },
     );
 
     const unsubscribeError = ad.addAdEventListener(
       AdEventType.ERROR,
       (error) => {
-        console.log('❌ Ad Error:', error);
+        // console.log('❌ Ad Error:', error);
       },
     );
 
@@ -239,9 +259,13 @@ function Add(_: any, ref: any) {
       },
     );
 
-    ad.load();
+    // Delay ad loading to prevent blocking navigation
+    const loadAdTimeout = setTimeout(() => {
+      ad.load();
+    }, 400); // Load ad 2 seconds after component mounts
 
     return () => {
+      clearTimeout(loadAdTimeout);
       unsubscribeLoaded();
       unsubscribeError();
       unsubscribeClosed();
@@ -259,18 +283,19 @@ export default forwardRef(Add);
 
 const styles = StyleSheet.create({
   nativeContainer: {
+    width: '100%',
     marginVertical: 10,
     marginHorizontal: 4,
-    backgroundColor: "#ffffff",
+    backgroundColor: "#1a1a1a", // Dark background to match app theme
     borderRadius: 12,
     overflow: "hidden",
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.08,
+    shadowOpacity: 0.3,
     shadowRadius: 8,
     elevation: 3,
     borderWidth: 1,
-    borderColor: "rgba(0,0,0,0.06)",
+    borderColor: "rgba(255,255,255,0.1)",
   },
 
   media: {
@@ -283,37 +308,50 @@ const styles = StyleSheet.create({
   },
 
   adLabel: {
-    fontSize: 9,
+    fontSize: 10,
     fontWeight: "800",
     color: "#888",
     letterSpacing: 1.5,
     marginBottom: 6,
+    textTransform: "uppercase",
   },
 
   title: {
-    fontSize: 15,
+    fontSize: 16,
     fontWeight: "700",
-    color: "#111",
-    lineHeight: 20,
+    color: "#fff", // White text for dark theme
+    lineHeight: 22,
   },
 
   body: {
-    fontSize: 12,
-    color: "#666",
+    fontSize: 13,
+    color: "#ccc", // Light gray for body
     marginTop: 4,
-    lineHeight: 17,
+    lineHeight: 18,
   },
 
   cta: {
     marginTop: 12,
     backgroundColor: "#2563eb",
-    paddingVertical: 9,
-    paddingHorizontal: 16,
+    paddingVertical: 10,
+    paddingHorizontal: 18,
     borderRadius: 8,
     color: "#fff",
-    fontSize: 13,
+    fontSize: 14,
     fontWeight: "700",
     textAlign: "center",
     overflow: "hidden",
+  },
+
+  adPlaceholder: {
+    height: 200,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: "rgba(255,255,255,0.05)",
+  },
+
+  placeholderText: {
+    color: "#666",
+    fontSize: 13,
   },
 });

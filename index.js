@@ -13,7 +13,7 @@ import { getMessaging, setBackgroundMessageHandler } from '@react-native-firebas
 
 
 setBackgroundMessageHandler(getMessaging(), async remoteMessage => {
-  console.log('Background message:', remoteMessage);
+  // console.log('Background message:', remoteMessage);
 });
 // ──────────────────────────────────────────────────────────────────────────
 

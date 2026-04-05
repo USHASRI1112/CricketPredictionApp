@@ -19,7 +19,7 @@ function TickArrow() {
         Animated.timing(translateX, { toValue: 0, duration: 600, useNativeDriver: true }),
       ])
     ).start();
-  }, []);
+  }, [translateX]);
 
   return (
     <Animated.Text style={[styles.arrowAnim, { transform: [{ translateX }] }]}>›</Animated.Text>

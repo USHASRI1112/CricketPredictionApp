@@ -1,4 +1,4 @@
-import { getFirestore, collection, doc, setDoc } from '@react-native-firebase/firestore';
+import { getFirestore, doc, setDoc } from '@react-native-firebase/firestore';
 
 const CACHE_COL    = 'cricket_cache';
 const ACTIVITY_DOC = 'user_activity';
@@ -11,8 +11,8 @@ export async function recordUserActivity(): Promise<void> {
       { lastActiveAt: Date.now() },
       { merge: true }
     );
-    console.log('[Activity] Recorded user activity');
+    // console.log('[Activity] Recorded user activity');
   } catch (e) {
-    console.warn('[Activity] Failed to record:', e);
+    // console.warn('[Activity] Failed to record:', e);
   }
 }

@@ -18,7 +18,7 @@ const TodayCard: React.FC<TodayCardProps> = ({ match, onPress }) => {
         Animated.timing(shimmer, { toValue: 0, duration: 1800, useNativeDriver: true }),
       ])
     ).start();
-  }, []);
+  }, [shimmer]);
 
   const shimmerOpacity = shimmer.interpolate({ inputRange: [0, 1], outputRange: [0.5, 1] });
 

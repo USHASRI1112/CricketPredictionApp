@@ -24,7 +24,7 @@ export const fetchPrediction = async (
   match: Match,
 ): Promise<PredictionResponse> => {
   try {
-    console.log("fetching prediction for match", match);
+    // console.log("fetching prediction for match", match);
     let scoreText = '';
     if (match.score && match.score.length > 0) {
       scoreText = match.score

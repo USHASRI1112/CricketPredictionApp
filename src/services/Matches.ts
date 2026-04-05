@@ -1,15 +1,25 @@
 import { CricketApiEndpoints } from '../constants/Api';
 import { saveMatchesToStorage } from '../helpers/SaveMatchesToStorage';
-
 import { Match } from '../types';
-// import { combineMatches } from '../helpers/CombineMatches';
 import { getMatchesFromStorage } from '../helpers/GetMatchesFromStorage';
-
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const MAX_DAILY_FULL_FETCH = 5;
 const MAX_UNIQUE_TARGET = 29;
 
+// ✅ Premium window (no limits)
+const isPremiumWindow = () => {
+  const now = new Date();
+  const start = new Date('2026-04-05');
+  const end = new Date('2026-05-05');
+
+  // normalize to avoid timezone issues
+  now.setHours(0, 0, 0, 0);
+  start.setHours(0, 0, 0, 0);
+  end.setHours(0, 0, 0, 0);
+
+  return now >= start && now <= end;
+};
 
 const getTodayKey = () => {
   const today = new Date().toISOString().split('T')[0];
@@ -28,84 +38,92 @@ const incrementFetchCount = async () => {
   await AsyncStorage.setItem(key, (count + 1).toString());
 };
 
-
 export const fetchMatches = async (): Promise<Match[]> => {
+  // console.log('[fetchMatches] Starting fetch');
   try {
-    // Fetch all matches
-    // const allMatchesResponse = []
-    // // if (!allMatchesResponse.ok) {
-    // //   throw new Error(`HTTP Error: ${allMatchesResponse.status}`);
-    // // }
-
-    // const allMatches: Match[] =
-    //   ((await allMatchesResponse.json()) as { data: Match[] }).data || [];
-
-    // Fetch current matches using optimized sliding logic
     const currentMatches: Match[] = await fetchSlidingCurrentMatches();
 
-    // Your existing validation (unchanged)
-    if (currentMatches.length === 0 ) {
-      throw new Error('No matches found in API response');
+    // If we got matches, save them
+    if (currentMatches.length > 0) {
+      saveMatchesToStorage(currentMatches);
+      // console.log('✅ API matches saved:', currentMatches.length);
+      return currentMatches;
     }
 
-    // Combine
-    // const matches = combineMatches(allMatches, currentMatches);
+    // If API is empty, silently load from storage (no error)
+    const cachedMatches = await getMatchesFromStorage();
+    if (cachedMatches && cachedMatches.length > 0) {
+      // console.log('📦 Using cached matches:', cachedMatches.length);
+      return cachedMatches;
+    }
 
-    // Save to AsyncStorage
-    saveMatchesToStorage(currentMatches);
+    // console.log('[fetchMatches] No matches from API or cache');
+    return [];
 
-    // Return or fallback
-    return currentMatches.length > 0
-      ? currentMatches
-      : await getMatchesFromStorage();
-
-  } catch (error: any) {
-    console.error('Error fetching matches:', error.message || error);
-
-    // Fallback from storage
-    return await getMatchesFromStorage();
+  } catch (error) {
+    // console.error('[fetchMatches] Error fetching matches:', error);
+    // Silent catch - just use storage, no error logging
+    const cachedMatches = await getMatchesFromStorage();
+    return cachedMatches || [];
   }
 };
 
-
-
 const fetchSlidingCurrentMatches = async (): Promise<Match[]> => {
+  // console.log('[fetchSlidingCurrentMatches] Starting');
   try {
+    const premium = isPremiumWindow();
     const fetchCount = await getFetchCount();
+    // console.log('[fetchSlidingCurrentMatches] Premium:', premium, 'fetchCount:', fetchCount);
 
-    // 🔹 If limit exceeded → only 1 call
-    if (fetchCount >= MAX_DAILY_FULL_FETCH) {
-      console.log("Limit reached → minimal fetch");
+    // 🔹 Limit applies ONLY outside premium window
+    if (!premium && fetchCount >= MAX_DAILY_FULL_FETCH) {
+      // console.log("⏱️ Daily limit reached → minimal fetch");
 
       const res = await fetch(
         CricketApiEndpoints.CURRENT_MATCHES(0)
       );
 
-      if (!res.ok) throw new Error("API error");
+      if (!res.ok) {
+        return [];
+      }
 
-      const json = await res.json() as { data: Match[] };
-
-      return json.data || [];
+      const json = await res.json() as { data?: Match[] | null };
+      const matches = json?.data || [];
+      if (matches.length > 0) // console.log(`✅ Minimal fetch got ${matches.length} matches`);
+      return matches;
     }
 
-    // 🔹 Otherwise → full optimized fetch
+    // 🔹 First call
+    // console.log('[fetchSlidingCurrentMatches] Making first API call');
     const firstRes = await fetch(
       CricketApiEndpoints.CURRENT_MATCHES(0)
     );
 
-    if (!firstRes.ok) throw new Error("API error");
+    if (!firstRes.ok) {
+      console.error('[fetchSlidingCurrentMatches] First API call failed:', firstRes.status);
+      return [];
+    }
 
     const firstJson = await firstRes.json() as {
-      data: Match[];
-      info?: { totalRows: number };
-    };
+      data?: Match[] | null;
+      info?: { totalRows?: number };
+    } | null;
+
+    if (!firstJson) {
+      // console.log('[fetchSlidingCurrentMatches] First API returned null');
+      return [];
+    }
 
     const firstMatches: Match[] = firstJson.data || [];
     const totalRows = firstJson.info?.totalRows || 0;
+    // console.log(`🏏 First API call got ${firstMatches.length}/${totalRows} matches`);
 
     let allMatches = [...firstMatches];
 
-    const target = Math.min(totalRows, MAX_UNIQUE_TARGET);
+    // 🔹 Dynamic target
+    const maxTarget = premium ? 50 : MAX_UNIQUE_TARGET;
+    const target = Math.min(totalRows, maxTarget);
+
     const additionalCallsNeeded = Math.max(0, target - firstMatches.length);
 
     const offsets = Array.from(
@@ -113,33 +131,49 @@ const fetchSlidingCurrentMatches = async (): Promise<Match[]> => {
       (_, i) => i + 1
     );
 
-    const requests = offsets.map(offset =>
-      fetch(CricketApiEndpoints.CURRENT_MATCHES(offset))
-        .then(res => {
-          if (!res.ok) throw new Error("API error");
-          return res.json();
-        })
-        .then(json => (json as { data: Match[] }).data || [])
-        .catch(() => [])
-    );
+    if (offsets.length > 0) {
+      // console.log(`🔄 Making ${offsets.length} additional API calls...`);
+      const requests = offsets.map(offset =>
+        fetch(CricketApiEndpoints.CURRENT_MATCHES(offset))
+          .then(res => {
+            if (!res.ok) {
+              console.warn(`⚠️ Offset ${offset} returned ${res.status}`);
+              return [];
+            }
+            return res.json();
+          })
+          .then((json: any) => {
+            if (!json?.data) return [];
+            return json.data || [];
+          })
+          .catch(err => {
+            console.warn(`⚠️ Failed to fetch offset ${offset}:`, err.message);
+            return [];
+          })
+      );
 
-    const results = await Promise.all(requests);
+      const results = await Promise.all(requests);
+      results.forEach(matches => {
+        allMatches.push(...matches);
+      });
+    }
 
-    results.forEach(matches => {
-      allMatches.push(...matches);
-    });
-
-    // 🔹 Increment ONLY when full fetch happens
-    await incrementFetchCount();
+    // 🔹 Increment ONLY outside premium window
+    if (!premium) {
+      await incrementFetchCount();
+      // console.log(`📊 Daily fetch count incremented`);
+    }
 
     const uniqueMatches = Array.from(
       new Map(allMatches.map(m => [m.id, m])).values()
     );
 
+    // console.log(`✅ Total unique matches fetched: ${uniqueMatches.length} (Premium: ${premium})`);
     return uniqueMatches;
 
   } catch (error) {
-    console.error("Sliding fetch error:", error);
+    // console.error('[fetchSlidingCurrentMatches] Error:', error);
+    // Silent error handling - return empty array
     return [];
   }
 };

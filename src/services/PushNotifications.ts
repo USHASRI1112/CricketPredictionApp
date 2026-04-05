@@ -39,25 +39,25 @@ export async function initPushNotifications(): Promise<string | null> {
       authStatus === AuthorizationStatus.PROVISIONAL;
 
     if (!enabled) {
-      console.log('[FCM] Permission denied by user');
+      // console.log('[FCM] Permission denied by user');
       return null;
     }
 
     // Get this device's unique FCM token
     const token = await getToken(messaging);
     await AsyncStorage.setItem(FCM_TOKEN_KEY, token);
-    console.log('[FCM] Token ready:', token);
+    // console.log('[FCM] Token ready:', token);
 
     // If token ever rotates (reinstall, etc.), save the new one
     onTokenRefresh(messaging, async newToken => {
       await AsyncStorage.setItem(FCM_TOKEN_KEY, newToken);
-      console.log('[FCM] Token refreshed:', newToken);
+      // console.log('[FCM] Token refreshed:', newToken);
     });
 
     return token;
 
   } catch (error) {
-    console.error('[FCM] Init failed:', error);
+    // console.error('[FCM] Init failed:', error);
     return null;
   }
 }
@@ -80,9 +80,9 @@ export async function getSavedToken(): Promise<string | null> {
 export async function subscribeToTopicHandler(topic: string): Promise<void> {
   try {
     await subscribeToTopic(getMessaging(), topic);
-    console.log(`[FCM] Subscribed → ${topic}`);
+    // console.log(`[FCM] Subscribed → ${topic}`);
   } catch (e) {
-    console.error(`[FCM] Subscribe failed for ${topic}:`, e);
+    // console.error(`[FCM] Subscribe failed for ${topic}:`, e);
   }
 }
 
@@ -91,9 +91,9 @@ export async function subscribeToTopicHandler(topic: string): Promise<void> {
 export async function unsubscribeFromTopicHandler(topic: string): Promise<void> {
   try {
     await unsubscribeFromTopic(getMessaging(), topic);
-    console.log(`[FCM] Unsubscribed → ${topic}`);
+    // console.log(`[FCM] Unsubscribed → ${topic}`);
   } catch (e) {
-    console.error(`[FCM] Unsubscribe failed for ${topic}:`, e);
+    // console.error(`[FCM] Unsubscribe failed for ${topic}:`, e);
   }
 }
 
@@ -114,7 +114,7 @@ export function onForegroundNotification(
     const body  = remoteMessage.notification?.body  ?? '';
     const data  = (remoteMessage.data ?? {}) as Record<string, string>;
 
-    console.log('[FCM] Foreground message:', title, body, data);
+    // console.log('[FCM] Foreground message:', title, body, data);
     callback(title, body, data);
   });
 }
@@ -131,12 +131,12 @@ export function onForegroundNotification(
 //   { screen: 'AllMatches' }
 export function onNotificationTap(
   callback: (data: Record<string, string>) => void
-): void {
+): () => void {
   const messaging = getMessaging();
 
   // Case 1: app was in background
-  onNotificationOpenedApp(messaging, remoteMessage => {
-    console.log('[FCM] Notification tapped (background):', remoteMessage.data);
+  const unsubscribeOpened = onNotificationOpenedApp(messaging, remoteMessage => {
+    // console.log('[FCM] Notification tapped (background):', remoteMessage.data);
     if (remoteMessage?.data) {
       callback(remoteMessage.data as Record<string, string>);
     }
@@ -145,8 +145,14 @@ export function onNotificationTap(
   // Case 2: app was killed — check on startup
   getInitialNotification(messaging).then(remoteMessage => {
     if (remoteMessage?.data) {
-      console.log('[FCM] Notification tapped (killed state):', remoteMessage.data);
+      // console.log('[FCM] Notification tapped (killed state):', remoteMessage.data);
       callback(remoteMessage.data as Record<string, string>);
     }
+  }).catch(error => {
+    // console.error('[FCM] getInitialNotification failed:', error);
   });
+
+  return () => {
+    unsubscribeOpened();
+  };
 }

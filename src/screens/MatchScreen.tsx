@@ -8,21 +8,19 @@ import {
   StyleSheet,
   ActivityIndicator,
   Image,
-  Alert,
   Animated,
   Dimensions,
   Linking,
   Easing,
 } from 'react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useRoute, RouteProp } from '@react-navigation/native';
 import { RootStackParamList } from '../../App';
 import { fetchPrediction, PredictionResponse } from '../services/Prediction';
 import { fetchLiveStatuses } from '../services/LiveStatus';
+import { subscribeToLiveScores } from '../services/LiveScoreCache';
 import { getProjectedScore } from '../helpers/ProjectedScore';
 import { Checkpoint, TestInfo, Match } from '../types';
-import Add, { adUnitId, RewardAdd_ } from './Add';
-import PollCard from '../components/PollCard';
+import Add, { RewardAdd_ } from './Add';
 
 type MatchScreenRouteProp = RouteProp<RootStackParamList, 'Match'>;
 
@@ -83,15 +81,6 @@ function formatMeta(fmt: string) {
 }
 
 // ─── PollCard ─────────────────────────────────────────────────────────────────
-
-type PollVote = 0 | 1 | 2;
-
-interface PollState {
-  team1Votes: number;
-  team2Votes: number;
-  userVote: PollVote;
-}
-
 
 // ─── Dynamic Color Generator ──────────────────────────────────────────────────
 function getDynamicColors(matchType?: string) {
@@ -163,7 +152,7 @@ function ProjectedScoreCard({ match, addRef }: { match: Match, addRef: React.Ref
       Animated.timing(lockScale, { toValue: 1.12, duration: 900, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
       Animated.timing(lockScale, { toValue: 1, duration: 900, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
     ])).start();
-  }, []);
+  }, [fadeAnim, lockScale, slideAnim]);
 
   const isLive = match.status?.toLowerCase().includes('live') || match.matchStarted;
   if (!isLive || !match.score || match.score.length === 0 || !match.matchType) return null;
@@ -354,9 +343,9 @@ function CheckpointGrid({
     theme.muted,
   ];
 
-  console.log(theme)
+  // console.log(theme)
 
-  console.log(palette)
+  // console.log(palette)
 
 
   return (
@@ -395,7 +384,7 @@ function CheckpointPill({
       Animated.spring(scaleAnim, { toValue: 1, delay, useNativeDriver: true, tension: 80, friction: 8 }),
       Animated.timing(fadeAnim, { toValue: 1, duration: 300, delay, useNativeDriver: true }),
     ]).start();
-  }, []);
+  }, [delay, fadeAnim, scaleAnim]);
 
   const isPast = checkpoint.isPast ?? false;
   const isCurrent = checkpoint.isCurrent ?? false;
@@ -855,7 +844,26 @@ function IdleBobTeam({ flag, name, label, color, entranceDelay, bobDelay, onDoub
 
 export default function MatchScreen() {
   const route = useRoute<MatchScreenRouteProp>();
-  const { match } = route.params;
+  const [match, setMatch] = useState<Match>(route.params.match);
+
+  useEffect(() => {
+    setMatch(route.params.match);
+  }, [route.params.match]);
+
+  useEffect(() => {
+    const unsub = subscribeToLiveScores((freshMatches) => {
+      const fresh = freshMatches.find(x => x.id === match.id);
+      if (!fresh) { return; }
+      setMatch(prev => ({
+        ...prev,
+        status: fresh.status ?? prev.status,
+        score: fresh.score ?? prev.score,
+        matchEnded: fresh.matchEnded ?? prev.matchEnded,
+        matchStarted: fresh.matchStarted ?? prev.matchStarted,
+      }));
+    });
+    return () => unsub();
+  }, [match.id]);
 
   const [prediction, setPrediction] = useState<PredictionResponse | null>(null);
   const [loading, setLoading] = useState(false);
@@ -868,6 +876,30 @@ export default function MatchScreen() {
   const rewardRef = useRef<{ showAd?: (cb?: () => void) => void } | null>(null); // ← add
   const [predictionLocked, setPredictionLocked] = useState(true);
   const colors = getDynamicColors(match.matchType);
+
+  // Reset prediction after 2 minutes to allow showing another ad
+  useEffect(() => {
+    if (!predictionLocked) {
+      const resetTimer = setTimeout(() => {
+        // console.log('Resetting prediction after 2 minutes');
+        setPredictionLocked(true);
+        setPrediction(null);
+        setError(null);
+        setLoading(false);
+      }, 2 * 60 * 1000); // 2 minutes
+
+      return () => clearTimeout(resetTimer);
+    }
+  }, [predictionLocked]);
+
+  // Reset prediction on component mount (reload)
+  useEffect(() => {
+    // Reset to locked state on component mount to allow showing ad again
+    setPredictionLocked(true);
+    setPrediction(null);
+    setError(null);
+    setLoading(false);
+  }, [match.id]); // Reset when match changes
 
 
   const slideLeft = useRef(new Animated.Value(0)).current;
@@ -915,7 +947,7 @@ export default function MatchScreen() {
   const handleGetPrediction = () => {
     const run = () => {
       setLoading(true); // show spinner inside locked card
-      setTimeout(() => loadPrediction(), 900);
+      setTimeout(() => loadPrediction(), 300);
     };
 
     if (addRef.current?.showAd) {
@@ -952,15 +984,19 @@ export default function MatchScreen() {
     setParticles(prev => prev.filter(p => p.id !== id));
   }, []);
 
-  const t1 = { flag: match.teamInfo && match.teamInfo.length > 0 ? match.teamInfo[0].img : null, name: match.teams[0] || 'Team A' };
-  const t2 = { flag: match.teamInfo && match.teamInfo.length > 1 ? match.teamInfo[1].img : null, name: match.teams[1] || 'Team B' };
+  const t1 = { 
+    flag: match.teamInfo?.find(t => t.name === match.teams[0])?.img || null, 
+    name: match.teams[0] || 'Team A' 
+  };
+  const t2 = { 
+    flag: match.teamInfo?.find(t => t.name === match.teams[1])?.img || null, 
+    name: match.teams[1] || 'Team B' 
+  };
   const left = swapped ? t2 : t1;
   const right = swapped ? t1 : t2;
 
   const leftRotY = flipLeft.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '360deg'] });
   const rightRotY = flipRight.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '360deg'] });
-
-  const matchId = `${match.teams?.[0]}_${match.teams?.[1]}_${match.date}`.replace(/\s+/g, '_');
 
   return (
     <View style={styles.root}>
@@ -1123,7 +1159,22 @@ export default function MatchScreen() {
 
           {/* Refresh only shows after unlocked */}
           {!predictionLocked && !loading && (
-            <TouchableOpacity style={styles.refreshBtn} onPress={loadPrediction} activeOpacity={0.82}>
+            <TouchableOpacity 
+              style={styles.refreshBtn} 
+              onPress={() => {
+                const run = () => {
+                  setLoading(true);
+                  loadPrediction();
+                };
+
+                if (addRef.current?.showAd) {
+                  addRef.current.showAd(run);
+                } else {
+                  run();
+                }
+              }} 
+              activeOpacity={0.82}
+            >
               <View style={styles.refreshBtnInner}>
                 <Text style={styles.refreshBtnIcon}>🔄</Text>
                 <Text style={styles.refreshBtnText}>Refresh Prediction</Text>
