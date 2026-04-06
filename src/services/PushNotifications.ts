@@ -38,13 +38,12 @@ export async function initPushNotifications(): Promise<string | null> {
       authStatus === AuthorizationStatus.AUTHORIZED ||
       authStatus === AuthorizationStatus.PROVISIONAL;
 
-    if (!enabled) {
-      // console.log('[FCM] Permission denied by user');
+    // Get this device's unique FCM token
+    const token = await getToken(messaging);
+    if (!token) {
       return null;
     }
 
-    // Get this device's unique FCM token
-    const token = await getToken(messaging);
     await AsyncStorage.setItem(FCM_TOKEN_KEY, token);
     // console.log('[FCM] Token ready:', token);
 
@@ -53,6 +52,12 @@ export async function initPushNotifications(): Promise<string | null> {
       await AsyncStorage.setItem(FCM_TOKEN_KEY, newToken);
       // console.log('[FCM] Token refreshed:', newToken);
     });
+
+    if (!enabled) {
+      // Keep the token/subscriptions ready so notifications start working
+      // as soon as the OS permission is granted.
+      // console.log('[FCM] Notification permission not yet enabled');
+    }
 
     return token;
 
