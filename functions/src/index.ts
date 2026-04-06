@@ -165,6 +165,27 @@ function isIPLMatch(m: Match): boolean {
   return s.includes('ipl') || s.includes('indian premier');
 }
 
+function isEndedStatus(m: Match): boolean {
+  const s = (m.status || '').toLowerCase();
+  return Boolean(m.matchEnded) || [
+    'won',
+    'complete',
+    'completed',
+    'finished',
+    'finish',
+    'result',
+    'abandon',
+    'abandoned',
+    'cancel',
+    'cancelled',
+    'postponed',
+    'postpone',
+    'no result',
+    'tie',
+    'draw',
+  ].some(hint => s.includes(hint));
+}
+
 function isMatchInIndia(m: Match): boolean {
   const v = (m.venue || '').toLowerCase();
   return INDIA_VENUES.some(x => v.includes(x));
@@ -172,7 +193,7 @@ function isMatchInIndia(m: Match): boolean {
 
 function isLive(m: Match): boolean {
   const s = (m.status || '').toLowerCase();
-  return !m.matchEnded && (
+  return !isEndedStatus(m) && (
     s.includes('live') || s.includes('progress') || !!m.matchStarted
   );
 }

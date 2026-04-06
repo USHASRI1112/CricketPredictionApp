@@ -18,6 +18,7 @@ import { RootStackParamList } from '../../App';
 import { fetchPrediction, PredictionResponse } from '../services/Prediction';
 import { fetchLiveStatuses } from '../services/LiveStatus';
 import { subscribeToLiveScores } from '../services/LiveScoreCache';
+import { isMatchLive, mergeFreshLiveMatches } from '../helpers/MatchLifecycle';
 import { getProjectedScore } from '../helpers/ProjectedScore';
 import { Checkpoint, TestInfo, Match } from '../types';
 import Add, { RewardAdd_ } from './Add';
@@ -154,7 +155,7 @@ function ProjectedScoreCard({ match, addRef }: { match: Match, addRef: React.Ref
     ])).start();
   }, [fadeAnim, lockScale, slideAnim]);
 
-  const isLive = match.status?.toLowerCase().includes('live') || match.matchStarted;
+  const isLive = isMatchLive(match);
   if (!isLive || !match.score || match.score.length === 0 || !match.matchType) return null;
 
   const currentInning = match.score[match.score.length - 1];
@@ -852,15 +853,10 @@ export default function MatchScreen() {
 
   useEffect(() => {
     const unsub = subscribeToLiveScores((freshMatches) => {
-      const fresh = freshMatches.find(x => x.id === match.id);
-      if (!fresh) { return; }
-      setMatch(prev => ({
-        ...prev,
-        status: fresh.status ?? prev.status,
-        score: fresh.score ?? prev.score,
-        matchEnded: fresh.matchEnded ?? prev.matchEnded,
-        matchStarted: fresh.matchStarted ?? prev.matchStarted,
-      }));
+      setMatch(prev => {
+        const merged = mergeFreshLiveMatches([prev], freshMatches);
+        return merged[0] || prev;
+      });
     });
     return () => unsub();
   }, [match.id]);

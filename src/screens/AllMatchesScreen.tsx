@@ -18,6 +18,7 @@ import EndedCard from '../components/EndedCard';
 import LiveCard from '../components/LiveCard';
 import TodayCard from '../components/TodayCard';
 import UpcomingCard from '../components/UpcomingCard';
+import { mergeFreshLiveMatches } from '../helpers/MatchLifecycle';
 import { splitMatches } from '../helpers/SplitMatches';
 import { shouldRefetchMatches } from '../helpers/ShouldRefetchMatches';
 import { fetchMatches } from '../services/Matches';
@@ -402,24 +403,7 @@ export default function AllMatchesScreen() {
         // console.log(`[LiveCache] Got ${freshMatches.length} fresh live matches from Firestore`);
 
         setMatches(prev => {
-          if (!prev || prev.length === 0) {
-            return freshMatches;
-          }
-
-          const merged = new Map(prev.map(m => [m.id, m]));
-          freshMatches.forEach(fresh => {
-            const existing = merged.get(fresh.id);
-            merged.set(fresh.id, {
-              ...existing,
-              ...fresh,
-              status: fresh.status ?? existing?.status,
-              score: fresh.score ?? existing?.score,
-              matchEnded: fresh.matchEnded ?? existing?.matchEnded,
-              matchStarted: fresh.matchStarted ?? existing?.matchStarted,
-            });
-          });
-
-          return Array.from(merged.values());
+          return mergeFreshLiveMatches(prev || [], freshMatches);
         });
       });
 
