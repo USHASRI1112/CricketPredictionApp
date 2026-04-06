@@ -145,6 +145,17 @@ function isPremiumMode(): boolean {
   return isPremiumPeriod();
 }
 
+function matchSummary(m: Match): string {
+  const score = m.score?.[0]
+    ? `${m.score[0].r ?? m.score[0].runs ?? 'na'}/${m.score[0].w ?? m.score[0].wkts ?? 'na'}@${m.score[0].o ?? m.score[0].overs ?? 'na'}`
+    : 'no-score';
+  return `${m.id}:${getTeamLabel(m)} | status="${m.status || ''}" | ended=${!!m.matchEnded} | started=${!!m.matchStarted} | score=${score}`;
+}
+
+function summarizeMatches(matches: Match[], limit = 5): string {
+  return matches.slice(0, limit).map(matchSummary).join(' || ');
+}
+
 
 // ─── Match detection helpers ──────────────────────────────────────────────
 const INDIA_VENUES = [
@@ -193,9 +204,17 @@ function isMatchInIndia(m: Match): boolean {
 
 function isLive(m: Match): boolean {
   const s = (m.status || '').toLowerCase();
-  return !isEndedStatus(m) && (
+  const live = !isEndedStatus(m) && (
     s.includes('live') || s.includes('progress') || !!m.matchStarted
   );
+  logger.debug?.('[MatchState] live-check', {
+    id: m.id,
+    status: m.status,
+    matchStarted: !!m.matchStarted,
+    matchEnded: !!m.matchEnded,
+    live,
+  });
+  return live;
 }
 
 function minutesUntilStart(m: Match): number | null {
@@ -317,11 +336,12 @@ async function fetchPage(
 ): Promise<{ matches: Match[]; totalRows: number }> {
   try {
     const url = `${BASE_URL}/currentMatches?apikey=${API_KEY}&offset=${offset}`;
+    logger.info(`[API] fetchPage start offset=${offset}`);
     const res = await axios.get(url);
     const json = res.data as ApiPage;
     const matches = json.data || [];
     const totalRows = json.info?.totalRows || matches.length;
-    logger.info(`[API] offset=${offset} → ${matches.length} matches (totalRows: ${totalRows})`);
+    logger.info(`[API] fetchPage done offset=${offset} matches=${matches.length} totalRows=${totalRows}`);
     return { matches, totalRows };
   } catch (e: any) {
     logger.warn(`[API] offset=${offset} failed:`, e.message);
@@ -337,6 +357,8 @@ async function fetchCurrentMatches(): Promise<Match[]> {
       logger.warn('[API] No matches from first page');
       return [];
     }
+
+    logger.info(`[API] page0 summary: ${summarizeMatches(page0)}`);
 
     const target = Math.min(totalRows, MAX_ROWS);
     const remaining = Math.max(0, target - page0.length);
@@ -359,6 +381,7 @@ async function fetchCurrentMatches(): Promise<Match[]> {
     const all = [...page0, ...remainingPages.flat()];
     const unique = Array.from(new Map(all.map(m => [m.id, m])).values());
     logger.info(`[API] Total unique: ${unique.length}`);
+    logger.info(`[API] unique summary: ${summarizeMatches(unique, 8)}`);
     return unique;
 
   } catch (e: any) {
@@ -371,6 +394,7 @@ async function fetchCurrentMatches(): Promise<Match[]> {
 async function saveLiveScores(matches: Match[]): Promise<void> {
   const live = matches.filter(isLive);
   logger.info(`[Firestore] Saving ${live.length} live matches`);
+  logger.info(`[Firestore] Live snapshot: ${summarizeMatches(live, 8)}`);
   await admin.firestore()
     .collection(CACHE_COL).doc(LIVE_SCORES_DOC)
     .set({
@@ -386,8 +410,11 @@ async function getNotifTracker(): Promise<NotifTrackerDoc> {
   try {
     const snap = await admin.firestore()
       .collection(CACHE_COL).doc(NOTIF_TRACKER_DOC).get();
-    return snap.exists ? (snap.data() as NotifTrackerDoc) : {};
+    const tracker = snap.exists ? (snap.data() as NotifTrackerDoc) : {};
+    logger.info(`[Notif] tracker loaded entries=${Object.keys(tracker).length}`);
+    return tracker;
   } catch {
+    logger.warn('[Notif] tracker load failed, returning empty tracker');
     return {};
   }
 }
@@ -419,6 +446,7 @@ async function recordNotifSent(
     .collection(CACHE_COL).doc(NOTIF_TRACKER_DOC)
     .set({ [matchId]: updated }, { merge: true });
   tracker[matchId] = updated;
+  logger.info(`[Notif] recorded type=${type} matchId=${matchId} sentCount=${updated.sentCount} lastScore="${updated.lastScore || ''}"`);
 }
 
 // ─── Send FCM ─────────────────────────────────────────────────────────────
@@ -431,16 +459,29 @@ async function sendFCM(
       topic === 'ipl_matches' ? '#FF8C00' :
         topic === 'live_matches' ? '#00E096' : '#F5C542';
 
-  await admin.messaging().send({
-    topic,
-    notification: { title, body },
-    android: {
-      priority: 'high',
-      notification: { sound: 'default', channelId: 'cricket_alerts', color },
-    },
-    data: { screen: 'Match', matchId, type },
-  });
-  logger.info(`[FCM] ✅ [${topic}] "${title}"`);
+  try {
+    logger.info(`[FCM] sending topic=${topic} matchId=${matchId} type=${type} title="${title}" body="${body}"`);
+    const messageId = await admin.messaging().send({
+      topic,
+      notification: { title, body },
+      android: {
+        priority: 'high',
+        notification: { sound: 'default', channelId: 'cricket_alerts', color },
+      },
+      data: { screen: 'Match', matchId, type },
+    });
+    logger.info(`[FCM] sent topic=${topic} matchId=${matchId} type=${type} messageId=${messageId}`);
+  } catch (error: any) {
+    logger.error('[FCM] send failed', {
+      topic,
+      matchId,
+      type,
+      title,
+      body,
+      error: error?.message || error,
+    });
+    throw error;
+  }
 }
 
 // ─── Push notifications ────────────────────────────────────────────────────
@@ -452,6 +493,8 @@ async function sendFCM(
 async function checkAndNotify(matches: Match[]): Promise<void> {
 
   const tracker = await getNotifTracker();
+  logger.info(`[Notif] checkAndNotify start matches=${matches.length}`);
+  logger.info(`[Notif] incoming snapshot: ${summarizeMatches(matches, 8)}`);
 
   // Detect if ANY IPL match is live
   const hasLiveIPLMatch = matches.some(m => isIPLMatch(m) && isLive(m));
@@ -557,6 +600,7 @@ const normalized = String(value).replace(/[^\d./]/g, '');
     const tag = fmt ? `${label} · ${fmt}` : label;
     const mins = minutesUntilStart(m);
     const scoreText = getScoreText(m);
+    logger.info(`[Notif] evaluating ${m.id} | live=${isLive(m)} | mins=${mins} | score="${scoreText}" | premium=${isPremium} | sent=${entry.sentCount}/${maxPerMatch}`);
 
     // ───────── PREMIUM MODE LOGIC ─────────
     if (isPremium) {
@@ -584,12 +628,14 @@ const normalized = String(value).replace(/[^\d./]/g, '');
       if (isLive(m) && !entry.types.includes('live')) {
         await sendFCM('ipl_matches', '🟢 Match LIVE', `${tag} has started`, m.id, 'live');
         entry.types.push('live'); entry.sentCount++;
+        logger.info(`[Notif] live-start notification sent for ${m.id}`);
       }
 
       // SCORE UPDATES
       if (isLive(m) && entry.sentCount < maxPerMatch) {
 
         const decision = shouldSendScoreUpdate(entry.lastScore, scoreText);
+        logger.info(`[Notif] score decision for ${m.id}: ${JSON.stringify(decision)} prev="${entry.lastScore}" curr="${scoreText}"`);
 
         if (decision.send) {
 
@@ -616,6 +662,7 @@ const normalized = String(value).replace(/[^\d./]/g, '');
       await admin.firestore()
         .collection(CACHE_COL).doc(NOTIF_TRACKER_DOC)
         .set({ [m.id]: entry }, { merge: true });
+      logger.info(`[Notif] tracker saved for ${m.id} sentCount=${entry.sentCount} types=${entry.types.join(',')}`);
 
       continue; // skip old logic
     }
@@ -696,6 +743,7 @@ export const cricketMaster = onSchedule(
         logger.warn(`[Master] ⚠ Rate limit near (${rateLimit.hitsUsed}/${rateLimit.hitsLimit}) — skipping`);
         return;
       }
+      logger.info(`[Master] rate-limit state used=${rateLimit.hitsUsed} limit=${rateLimit.hitsLimit} resetAt=${new Date(rateLimit.resetAt).toISOString()}`);
 
       // ③ Time threshold guard
       // Premium mode and IPL match hours use aggressive refresh
@@ -707,6 +755,7 @@ export const cricketMaster = onSchedule(
       const msSinceLast = Date.now() - lastUpdatedAt;
       const isActiveTime = isPremium || (isIPLSeason() && isIPLMatchHours());
       const thresholdMs = isActiveTime ? 1 * 60 * 1000 : 15 * 60 * 1000;
+      logger.info(`[Master] freshness check lastUpdatedAt=${lastUpdatedAt} ageMs=${msSinceLast} thresholdMs=${thresholdMs} activeTime=${isActiveTime}`);
 
       if (msSinceLast < thresholdMs) {
         logger.info(`[Master] ⏭ Data fresh (${Math.round(msSinceLast / 1000)}s) — skipping fetch`);
@@ -714,6 +763,7 @@ export const cricketMaster = onSchedule(
         // (matches already in Firestore may have live ones to notify about)
         const existingMatches = snap.exists
           ? (snap.data() as LiveScoreDoc).matches : [];
+        logger.info(`[Master] using cached live matches count=${existingMatches.length}`);
         if (existingMatches.length > 0) {
           await checkAndNotify(existingMatches);
         }
@@ -732,8 +782,10 @@ export const cricketMaster = onSchedule(
         logger.warn('[Master] No matches returned');
         return;
       }
+      logger.info(`[Master] fetched matches=${matches.length} live=${matches.filter(isLive).length}`);
 
       const extraPages = Math.max(0, Math.ceil(Math.min(matches.length, MAX_ROWS) / 25) - 1);
+      logger.info(`[Master] incrementing rate limit hits by ${1 + extraPages}`);
       await incrementRateLimit(1 + extraPages);
 
       // ⑤ Save live scores

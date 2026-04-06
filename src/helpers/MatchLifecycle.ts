@@ -41,8 +41,16 @@ export const mergeFreshLiveMatches = (
   fresh: Match[],
 ): Match[] => {
   if (!previous || previous.length === 0) {
+    console.info('[MatchLifecycle] mergeFreshLiveMatches using fresh snapshot only', { fresh: fresh.length });
     return fresh;
   }
+
+  const staleRemoved = previous.filter(existing => isMatchLive(existing) && !fresh.some(match => match.id === existing.id)).map(m => m.id);
+  console.info('[MatchLifecycle] mergeFreshLiveMatches start', {
+    previous: previous.length,
+    fresh: fresh.length,
+    staleRemoved,
+  });
 
   const freshIds = new Set(fresh.map(match => match.id));
   const merged = new Map(previous.map(match => [match.id, match]));
@@ -66,8 +74,10 @@ export const mergeFreshLiveMatches = (
         matchEnded: true,
         status: 'Match Ended',
       });
+      console.info('[MatchLifecycle] marked stale live match as ended', { id: existing.id, status: existing.status });
     }
   });
 
+  console.info('[MatchLifecycle] mergeFreshLiveMatches done', { result: merged.size });
   return Array.from(merged.values());
 };
