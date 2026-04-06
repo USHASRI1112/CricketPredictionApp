@@ -134,14 +134,18 @@ export default function App() {
 
   // ── Initialize AdMob ──────────────────────────────────────────────────
   useEffect(() => {
+    console.info('[App] bootstrap start');
     MobileAds().initialize();
+    console.info('[App] AdMob initialized');
   }, []);
 
   // ── Record user activity on open + foreground ─────────────────────────
   useEffect(() => {
+    console.info('[App] activity tracking start');
     recordUserActivity();
 
     const sub = AppState.addEventListener('change', (state: AppStateStatus) => {
+      console.info('[App] app state changed', state);
       if (state === 'active') {
         recordUserActivity();
       }
@@ -154,9 +158,12 @@ export default function App() {
   useEffect(() => {
     const checkRefetch = async () => {
       try {
+        console.info('[App] refetch check start');
         const should = await shouldRefetchMatches();
+        console.info('[App] refetch decision', { should });
         if (should) {
           const data = await fetchMatches();
+          console.info('[App] initial refetch fetched matches', { count: data.length });
           queryClient.setQueryData(['ALL_MATCHES', 'storage'], data);
         }
       } catch (e) {
@@ -179,6 +186,7 @@ export default function App() {
 
     async function setupNotifications() {
       try {
+        console.info('[FCM] setupNotifications start');
         await createNotificationChannel();
         const token = await initPushNotifications();
         if (!token) {
@@ -186,29 +194,37 @@ export default function App() {
           return;
         }
 
+        console.info('[FCM] setupNotifications token ready', { tokenPrefix: token.slice(0, 12), tokenLength: token.length });
+
         await subscribeToTopicHandler(TOPICS.INDIA_MATCHES);
         await subscribeToTopicHandler(TOPICS.IPL_MATCHES);
         await subscribeToTopicHandler(TOPICS.LIVE_MATCHES);
         await subscribeToTopicHandler(TOPICS.PREDICTIONS);
+        console.info('[FCM] topic subscriptions complete', TOPICS);
 
         unsubscribeForeground = onForegroundNotification((title, body, data) => {
-          // console.log('[FCM] Foreground → showing toast:', title, body);
+          console.info('[FCM] foreground callback', { title, body, data });
           setToast({ title, body, type: resolveToastType(title, data) });
         });
 
         unsubscribeTap = onNotificationTap((data) => {
+          console.info('[FCM] notification tap callback', data);
           if (!data) { return; }
           if (data.screen === 'Match' && data.matchId) {
             const cached = queryClient.getQueryData<Match[]>(['ALL_MATCHES', 'storage']);
             const match  = cached?.find(m => m.id === data.matchId);
             if (match) {
+              console.info('[FCM] navigating to match from tap', { matchId: data.matchId });
               navigationRef.current?.navigate('Match', { matchId: data.matchId, match });
             } else {
+              console.warn('[FCM] tapped match not found in cache, falling back to AllMatches', { matchId: data.matchId });
               navigationRef.current?.navigate('AllMatches');
             }
           } else if (data.screen === 'AllMatches') {
+            console.info('[FCM] navigating to AllMatches from tap');
             navigationRef.current?.navigate('AllMatches');
           } else {
+            console.info('[FCM] navigating to Home from tap');
             navigationRef.current?.navigate('Home');
           }
         });
@@ -220,6 +236,7 @@ export default function App() {
     setupNotifications();
 
     return () => {
+      console.info('[FCM] cleanup notification listeners');
       unsubscribeForeground?.();
       unsubscribeTap?.();
     };

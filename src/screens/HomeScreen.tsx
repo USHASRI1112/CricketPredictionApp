@@ -23,6 +23,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { fetchMatchesFromLocal } from '../services/MatchesFromLocal';
 import { fetchMatches } from '../services/Matches';
 import { subscribeToLiveScores } from '../services/LiveScoreCache';
+import { isMatchLive, mergeFreshLiveMatches } from '../helpers/MatchLifecycle';
 import { shouldRefetchMatches } from '../helpers/ShouldRefetchMatches';
 import { Match } from '../types';
 import Add, { AppOpenAdManager } from './Add';
@@ -871,7 +872,7 @@ function PredictionBanner({ match, index, onPress }: { match: Match; index: numb
   const type            = getPredictionType(match);
   const team1           = match.teams?.[0] || '—';
   const team2           = match.teams?.[1] || '—';
-  const isLive          = !match.matchEnded && match.status?.toLowerCase().includes('live');
+  const isLive          = isMatchLive(match);
 
   // Banner accent varies by type
   const accentColor = type === 'ipl' ? C.orange : C.cyan;
@@ -1111,27 +1112,8 @@ export default function HomeScreen() {
     if (matches.length === 0) { return; }
 
     const unsub = subscribeToLiveScores((freshMatches) => {
-      if (!freshMatches || freshMatches.length === 0) { return; }
-
       queryClient.setQueryData<Match[] | null>(['ALL_MATCHES', 'storage'], (current) => {
-        if (!current || current.length === 0) {
-          return freshMatches;
-        }
-
-        const merged = new Map(current.map(m => [m.id, m]));
-        freshMatches.forEach(fresh => {
-          const existing = merged.get(fresh.id);
-          merged.set(fresh.id, {
-            ...existing,
-            ...fresh,
-            status: fresh.status ?? existing?.status,
-            score: fresh.score ?? existing?.score,
-            matchEnded: fresh.matchEnded ?? existing?.matchEnded,
-            matchStarted: fresh.matchStarted ?? existing?.matchStarted,
-          });
-        });
-
-        return Array.from(merged.values());
+        return mergeFreshLiveMatches(current || [], freshMatches);
       });
     });
 
@@ -1141,7 +1123,7 @@ export default function HomeScreen() {
   // Live matches for the mini-scorecard section (top 3)
   
   const liveMatches = matches
-    .filter(m => !m.matchEnded && m.status?.toLowerCase().includes('live'))
+    .filter(m => isMatchLive(m))
 
   return (
     <View style={styles.root}>
@@ -1487,4 +1469,3 @@ const styles = StyleSheet.create({
   footerLine: { width: 40, height: 1, backgroundColor: 'rgba(255,255,255,0.1)', marginBottom: 12 },
   footerText: { color: 'rgba(255,255,255,0.18)', fontSize: 9, letterSpacing: 2 },
 });
-

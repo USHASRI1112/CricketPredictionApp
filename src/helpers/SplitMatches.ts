@@ -1,5 +1,6 @@
 import { Match } from '../types';
 import { isToday } from './CombineMatches';
+import { isMatchEnded, isMatchLive } from './MatchLifecycle';
 
 export const splitMatches = (
   matches: Match[],
@@ -10,7 +11,9 @@ export const splitMatches = (
   const today: Match[] = [];
 
   matches.forEach(match => {
-    if (match.matchStarted && !match.matchEnded) {
+    if (isMatchEnded(match)) {
+      ended.push(match);
+    } else if (isMatchLive(match)) {
       live.push(match);
     } else if (
       !match.matchStarted &&
@@ -19,8 +22,6 @@ export const splitMatches = (
       upcoming.push(match);
     } else if (match.matchStarted && isToday(match.date)) {
       today.push(match);
-    } else if (match.matchEnded) {
-      ended.push(match);
     }
   });
 
