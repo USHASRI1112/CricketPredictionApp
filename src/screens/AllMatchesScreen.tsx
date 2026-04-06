@@ -4,6 +4,7 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
+  ActivityIndicator,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -11,13 +12,13 @@ import {
   View,
   Animated,
   Pressable,
-  Easing,
 } from 'react-native';
 import { RootStackParamList } from '../../App';
 import EndedCard from '../components/EndedCard';
 import LiveCard from '../components/LiveCard';
 import TodayCard from '../components/TodayCard';
 import UpcomingCard from '../components/UpcomingCard';
+import { isMatchOnCurrentDate } from '../helpers/MatchDate';
 import { splitMatches } from '../helpers/SplitMatches';
 import { shouldRefetchMatches } from '../helpers/ShouldRefetchMatches';
 import { fetchMatches } from '../services/Matches';
@@ -33,6 +34,7 @@ type AllMatchesScreenNavigationProp = NativeStackNavigationProp<
 >;
 
 type FilterKey = 'all' | 'live' | 'today' | 'upcoming' | 'ended';
+const MAX_STARTUP_SPINNER_MS = 1500;
 
 // ── Filter tab config ─────────────────────────────────────────
 const FILTERS: {
@@ -180,104 +182,12 @@ function EmptyState({ filter }: { filter: FilterKey }) {
   );
 }
 
-// ── Dynamic Loading Messages ───────────────────────────────────
-const LOADING_MESSAGES = [
-  '⚡ Crunching the numbers... AI is thinking! 🧠',
-  '🏏 Analyzing team form & player stats...',
-  '📊 Calculating win probabilities in real-time...',
-  '🎯 Our ML model is predicting the future! 🔮',
-  '🔥 Getting the hottest predictions for you...',
-  '💫 Fetching cosmic cricket wisdom...',
-  '🎪 The prediction show is loading! 🎭',
-  '⚾ Toss is in the air, predictions in the oven! 🍳',
-  '🌟 Summoning the cricket gods... 🙏',
-  '📱 Unlocking AI match intelligence...',
-  '🏆 Building your path to victory...',
-  '🚀 Launching prediction engines at full throttle!',
-  '💥 Explosive analysis incoming in 3...2...1...',
-  '🎯 Pinpointing the match winner with precision...',
-  '⚡ Charging up the prediction batteries! 🔋',
-  '🧪 Testing our crystal ball predictions...',
-  '🎲 Rolling the dice of probability...',
-  '📈 Graphing the path to your winning bets!',
-  '🌈 Rainbow of predictions appearing on the horizon...',
-  '🎬 Action! Analyzing your next big match...',
-  '🔐 Unlocking hidden match insights...',
-  '👑 Crowning our AI with match predictions...',
-  '🎸 Playing the prediction symphony! 🎵',
-  '🏅 Polishing the perfect prediction for you...',
-  '⭐ Making magic happen with data science!',
-];
-
-// ── Loading Screen with Dynamic Messages ───────────────────────
-function LoadingScreen() {
-  const [messageIndex, setMessageIndex] = useState(0);
-  const spinnerRotation = useRef(new Animated.Value(0)).current;
-
-  // Rotate spinner continuously
-  useEffect(() => {
-    Animated.loop(
-      Animated.timing(spinnerRotation, {
-        toValue: 1,
-        duration: 2000,
-        easing: Easing.linear,
-        useNativeDriver: true,
-      })
-    ).start();
-  }, []);
-
-  // Change message every 2 seconds
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setMessageIndex(prev => (prev + 1) % LOADING_MESSAGES.length);
-    }, 2000);
-    return () => clearInterval(interval);
-  }, []);
-
-  const rotate = spinnerRotation.interpolate({
-    inputRange: [0, 1],
-    outputRange: ['0deg', '360deg'],
-  });
-
-  return (
-    <View style={styles.loadingWrap}>
-      <View style={styles.loadingCard}>
-        <Animated.View style={[styles.spinnerContainer, { transform: [{ rotate }] }]}>
-          <Text style={styles.spinnerEmoji}>🏏</Text>
-        </Animated.View>
-        <Text style={styles.loadingTitle}>LOADING</Text>
-        <Text style={styles.dynamicMessage}>{LOADING_MESSAGES[messageIndex]}</Text>
-        <View style={styles.dotsContainer}>
-          <Text style={styles.dot}>●</Text>
-          <Text style={styles.dot}>●</Text>
-          <Text style={styles.dot}>●</Text>
-        </View>
-      </View>
-    </View>
-  );
-}
-
-// ── Refresh Loading Overlay ──────────────────────────────────────────────────────
 function RefreshLoadingOverlay({ visible }: { visible: boolean }) {
-  const [messageIndex, setMessageIndex] = useState(0);
-
-  useEffect(() => {
-    if (!visible) return;
-    const interval = setInterval(() => {
-      setMessageIndex(prev => (prev + 1) % LOADING_MESSAGES.length);
-    }, 2000);
-    return () => clearInterval(interval);
-  }, [visible]);
-
   if (!visible) return null;
 
   return (
     <View style={styles.refreshOverlay}>
-      <View style={styles.refreshOverlayContent}>
-        <Text style={styles.refreshIcon}>⚡</Text>
-        <Text style={styles.refreshTitle}>Refreshing Matches</Text>
-        <Text style={styles.refreshMessage}>{LOADING_MESSAGES[messageIndex]}</Text>
-      </View>
+      <ActivityIndicator size="small" color="#d4a843" />
     </View>
   );
 }
@@ -290,8 +200,8 @@ export default function AllMatchesScreen() {
   const [matches, setMatches] = useState<Match[]>([]);
   const [refreshing, setRefreshing] = useState(false);
   const [activeFilter, setActiveFilter] = useState<FilterKey>('all');
-  const [isInitialLoading, setIsInitialLoading] = useState(true);
-  const [forceHideLoader, setForceHideLoader] = useState(false);
+  const [startupSpinnerExpired, setStartupSpinnerExpired] = useState(false);
+  const [storageBootstrapDone, setStorageBootstrapDone] = useState(false);
 
   const headerOpacity = useRef(new Animated.Value(0)).current;
   const headerY = useRef(new Animated.Value(-16)).current;
@@ -322,12 +232,16 @@ export default function AllMatchesScreen() {
       const prioritizedSplit = splitMatches(prioritized);
       const nonPrioritizedSplit = splitMatches(nonPrioritized);
       
+      // Filter live matches to only today's date
+      const filterLiveToday = (arr: Match[]) => arr.filter(match => isMatchOnCurrentDate(match));
+      
       return {
         ...nonPrioritizedSplit, // Regular matches (non-prioritized)
-        prioritizedLive: prioritizedSplit.live,
+        prioritizedLive: filterLiveToday(prioritizedSplit.live),
         prioritizedToday: prioritizedSplit.today,
         prioritizedUpcoming: prioritizedSplit.upcoming,
         prioritizedEnded: prioritizedSplit.ended,
+        live: filterLiveToday(nonPrioritizedSplit.live),
       };
     },
     [matches],
@@ -340,12 +254,19 @@ export default function AllMatchesScreen() {
     ]).start();
   }, []);
 
-  // Stop initial loading as soon as we have any matches
   useEffect(() => {
-    if (matches.length > 0) {
-      setIsInitialLoading(false);
+    const timer = setTimeout(() => {
+      setStartupSpinnerExpired(true);
+    }, MAX_STARTUP_SPINNER_MS);
+
+    return () => clearTimeout(timer);
+  }, []);
+
+  useEffect(() => {
+    if (storageQuery.isSuccess || storageQuery.isError) {
+      setStorageBootstrapDone(true);
     }
-  }, [matches.length]);
+  }, [storageQuery.isSuccess, storageQuery.isError]);
 
   useEffect(() => {
     // Delay the initial data check to prevent blocking navigation
@@ -432,17 +353,6 @@ export default function AllMatchesScreen() {
     return () => clearTimeout(timer);
   }, []);
 
-  // Force hide loader after 700ms to prevent hanging
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      setForceHideLoader(true);
-    }, 400);
-    return () => clearTimeout(timer);
-  }, []);
-
-
-
-
   // Counts per filter
   const counts: Record<FilterKey, number> = {
     all: matches.length,
@@ -454,9 +364,7 @@ export default function AllMatchesScreen() {
 
   // Check if we have any matches to show ads
   const hasAnyMatches = matches.length > 0;
-
-  // Show loading only for initial load, not auto-refresh
-  const showLoadingScreen = !forceHideLoader && (isInitialLoading || (storageQuery.isLoading && !matches.length));
+  const showSpinnerOverlay = !startupSpinnerExpired && !storageBootstrapDone && !matches.length;
 
   const handleMatchPress = (match: Match) => {
     if (addRef.current?.showAd) {
@@ -475,15 +383,6 @@ export default function AllMatchesScreen() {
   const showEnded = activeFilter === 'all' || activeFilter === 'ended';
 
   const isFilterEmpty = counts[activeFilter] === 0;
-
-  // ── Loading screen ────────────────────────────────
-  if (showLoadingScreen) {
-    return (
-      <View style={styles.container}>
-        <LoadingScreen />
-      </View>
-    );
-  }
 
   return (
     <View style={styles.container}>
@@ -531,7 +430,7 @@ export default function AllMatchesScreen() {
           showsVerticalScrollIndicator={false}
           refreshControl={
             <RefreshControl
-              refreshing={refreshing || fetchMutation.isPending}
+              refreshing={refreshing}
               tintColor="#d4a843"
               colors={['#d4a843']}
               onRefresh={() => {
@@ -547,7 +446,7 @@ export default function AllMatchesScreen() {
           {showLive && prioritizedLive.length > 0 && (
             <View style={styles.section}>
               <SectionHeader label="⭐ IPL / INDIA - LIVE NOW" delay={30} />
-              {prioritizedLive.flatMap((match, i) => {
+              {prioritizedLive.flatMap(match => {
                 const card = <LiveCard key={match.id} match={match} onPress={() => handleMatchPress(match)} />;
                 return [card];
               })}
@@ -557,7 +456,7 @@ export default function AllMatchesScreen() {
           {showToday && prioritizedToday.length > 0 && (
             <View style={styles.section}>
               <SectionHeader label="⭐ IPL / INDIA - TODAY" delay={60} />
-              {prioritizedToday.flatMap((match, i) => {
+              {prioritizedToday.flatMap(match => {
                 const card = <TodayCard key={match.id} match={match} onPress={() => handleMatchPress(match)} />;
                 return [card];
               })}
@@ -567,7 +466,7 @@ export default function AllMatchesScreen() {
           {showUpcoming && prioritizedUpcoming.length > 0 && (
             <View style={styles.section}>
               <SectionHeader label="⭐ IPL / INDIA - UPCOMING" delay={90} />
-              {prioritizedUpcoming.flatMap((match, i) => {
+              {prioritizedUpcoming.flatMap(match => {
                 const card = <UpcomingCard key={match.id} match={match} onPress={() => handleMatchPress(match)} />;
                 return [card];
               })}
@@ -577,7 +476,7 @@ export default function AllMatchesScreen() {
           {showEnded && prioritizedEnded.length > 0 && (
             <View style={styles.section}>
               <SectionHeader label="⭐ IPL / INDIA - ENDED" delay={120} />
-              {prioritizedEnded.flatMap((match, i) => {
+              {prioritizedEnded.flatMap(match => {
                 const card = <EndedCard key={match.id} match={match} onPress={() => handleMatchPress(match)} />;
                 return [card];
               })}
@@ -644,7 +543,7 @@ export default function AllMatchesScreen() {
           <View style={{ height: 40 }} />
         </ScrollView>
       </View>
-      <RefreshLoadingOverlay visible={fetchMutation.isPending && matches.length > 0} />
+      <RefreshLoadingOverlay visible={showSpinnerOverlay} />
     </View>
   );
 }
@@ -795,80 +694,6 @@ const styles = StyleSheet.create({
     letterSpacing: 1,
   },
 
-  // ── Loading ───────────────────────────────────────
-  loadingWrap: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: 'rgba(13, 26, 8, 0.3)',
-    zIndex: 100,
-  },
-  loadingCard: {
-    alignItems: 'center',
-    backgroundColor: 'rgba(45, 55, 30, 0.85)',
-    padding: 24,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.1)',
-    width: 280,
-  },
-
-  loadingTitle: {
-    fontSize: 18,
-    fontWeight: '900',
-    color: '#f0e6c8',
-    letterSpacing: 3,
-    textAlign: 'center',
-    marginBottom: 8,
-  },
-
-  loadingSubtitle: {
-    marginTop: 8,
-    fontSize: 12,
-    color: '#8aaa6a',
-    letterSpacing: 4,
-    textTransform: 'uppercase',
-  },
-
-  // ── Dynamic Loading Screen ────────────────────────
-  spinnerContainer: {
-    width: 80,
-    height: 80,
-    marginBottom: 24,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'rgba(45, 55, 30, 0.85)',
-    borderRadius: 16,
-    padding: 16,
-  },
-  spinnerEmoji: {
-    fontSize: 60,
-  },
-  dynamicMessage: {
-    fontSize: 16,
-    color: '#40d2e8',
-    fontWeight: '700',
-    textAlign: 'center',
-    marginHorizontal: 20,
-    maxWidth: 320,
-    lineHeight: 24,
-    letterSpacing: 0.5,
-  },
-  dotsContainer: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    gap: 8,
-    marginTop: 8,
-  },
-  dot: {
-    fontSize: 12,
-    color: '#d4a843',
-  },
-
   // ── Refresh Loading Overlay ───────────────────────
   refreshOverlay: {
     position: 'absolute',
@@ -876,36 +701,8 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    backgroundColor: 'rgba(13, 26, 8, 0.25)',
     justifyContent: 'center',
     alignItems: 'center',
     zIndex: 1000,
-  },
-  refreshOverlayContent: {
-    alignItems: 'center',
-    backgroundColor: 'rgba(45, 55, 30, 0.85)',
-    padding: 24,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.1)',
-  },
-  refreshIcon: {
-    fontSize: 48,
-    marginBottom: 16,
-  },
-  refreshTitle: {
-    fontSize: 20,
-    fontWeight: '900',
-    color: '#40d2e8',
-    marginBottom: 12,
-    letterSpacing: 2,
-  },
-  refreshMessage: {
-    fontSize: 14,
-    color: '#d4a843',
-    fontWeight: '700',
-    textAlign: 'center',
-    maxWidth: 280,
-    lineHeight: 20,
   },
 });

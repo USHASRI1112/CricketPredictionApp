@@ -43,7 +43,7 @@ const DEFAULT_NOTIF_THROTTLE_MS = 15 * 60 * 1000; // non-IPL
 const IPL_NOTIF_THROTTLE_MS = 7 * 60 * 1000; // IPL matches
 
 // ─── Other config ─────────────────────────────────────────────────────────
-const MAX_ROWS = 50;
+const MAX_ROWS = 100;
 const ACTIVE_WINDOW_MS = 5 * 60 * 1000; // skip if no user in last 5 min
 
 // ─── Types ────────────────────────────────────────────────────────────────
@@ -350,6 +350,16 @@ async function fetchCurrentMatches(): Promise<Match[]> {
 async function saveLiveScores(matches: Match[]): Promise<void> {
   const live = matches.filter(isLive);
   logger.info(`[Firestore] Saving ${live.length} live matches`);
+  live.forEach(match => {
+    logger.info('[Firestore] Live match payload', {
+      id: match.id,
+      name: match.name,
+      status: match.status,
+      date: match.date,
+      dateTimeGMT: match.dateTimeGMT,
+      score: match.score ?? [],
+    });
+  });
   await admin.firestore()
     .collection(CACHE_COL).doc(LIVE_SCORES_DOC)
     .set({
@@ -459,7 +469,7 @@ async function checkAndNotify(matches: Match[]): Promise<void> {
     if (typeof value === 'number') {
       return value;
     }
-const normalized = String(value).replace(/[^\d./]/g, '');
+    const normalized = String(value).replace(/[^\d./]/g, '');
     const parsed = parseFloat(normalized);
     return Number.isFinite(parsed) ? parsed : NaN;
   };
@@ -491,9 +501,44 @@ const normalized = String(value).replace(/[^\d./]/g, '');
     return { send: false };
   };
 
+  const getLatestInningScore = (m: Match): InningScore | null => {
+    if (!m.score || m.score.length === 0) return null;
+
+    const candidates = m.score.map((inning, index) => {
+      const runs = parseNumber(inning.r ?? inning.runs);
+      const wickets = parseNumber(inning.w ?? inning.wkts);
+      const overs = parseNumber(inning.o ?? inning.overs);
+      const hasNumbers = !Number.isNaN(runs) || !Number.isNaN(wickets) || !Number.isNaN(overs);
+
+      return { inning, index, runs, wickets, overs, hasNumbers };
+    }).filter(candidate => candidate.hasNumbers);
+
+    if (candidates.length === 0) {
+      return m.score[m.score.length - 1] ?? null;
+    }
+
+    candidates.sort((a, b) => {
+      const oversA = Number.isNaN(a.overs) ? -1 : a.overs;
+      const oversB = Number.isNaN(b.overs) ? -1 : b.overs;
+      if (oversA !== oversB) {
+        return oversB - oversA;
+      }
+
+      const runsA = Number.isNaN(a.runs) ? -1 : a.runs;
+      const runsB = Number.isNaN(b.runs) ? -1 : b.runs;
+      if (runsA !== runsB) {
+        return runsB - runsA;
+      }
+
+      return b.index - a.index;
+    });
+
+    return candidates[0]?.inning ?? null;
+  };
+
   const getScoreText = (m: Match): string => {
-    if (!m.score || m.score.length === 0) return '';
-    const s = m.score[0];
+    const s = getLatestInningScore(m);
+    if (!s) return '';
     const runs = parseNumber(s.r ?? s.runs);
     const wickets = parseNumber(s.w ?? s.wkts);
     const overs = parseNumber(s.o ?? s.overs);
@@ -537,6 +582,16 @@ const normalized = String(value).replace(/[^\d./]/g, '');
     const mins = minutesUntilStart(m);
     const scoreText = getScoreText(m);
 
+    if (isLive(m)) {
+      logger.info('[Notif] Processing live match', {
+        matchId: m.id,
+        name: m.name,
+        status: m.status,
+        previousScoreText: entry.lastScore,
+        scoreText,
+      });
+    }
+
     // ───────── PREMIUM MODE LOGIC ─────────
     if (isPremium) {
 
@@ -569,6 +624,14 @@ const normalized = String(value).replace(/[^\d./]/g, '');
       if (isLive(m) && entry.sentCount < maxPerMatch) {
 
         const decision = shouldSendScoreUpdate(entry.lastScore, scoreText);
+        logger.info('[Notif] Live score evaluation', {
+          matchId: m.id,
+          name: m.name,
+          status: m.status,
+          previousScoreText: entry.lastScore,
+          scoreText,
+          decision,
+        });
 
         if (decision.send) {
 
@@ -685,7 +748,7 @@ export const cricketMaster = onSchedule(
         ? (snap.data() as LiveScoreDoc).lastUpdatedAt : 0;
       const msSinceLast = Date.now() - lastUpdatedAt;
       const isActiveTime = isPremium || (isIPLSeason() && isIPLMatchHours());
-      const thresholdMs = isActiveTime ? 1 * 60 * 1000 : 15 * 60 * 1000;
+      const thresholdMs = isActiveTime ? 1 * 60 * 1000 : 7 * 60 * 1000;
 
       if (msSinceLast < thresholdMs) {
         logger.info(`[Master] ⏭ Data fresh (${Math.round(msSinceLast / 1000)}s) — skipping fetch`);

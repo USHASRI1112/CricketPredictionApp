@@ -21,12 +21,14 @@ import MatchScreen from './src/screens/MatchScreen';
 import { fetchMatches } from './src/services/Matches';
 import { Match } from './src/types';
 import {
+  ensureAndroidNotificationPermission,
   initPushNotifications,
   subscribeToTopicHandler,
   onForegroundNotification,
   onNotificationTap,
   TOPICS,
   createNotificationChannel,
+  showForegroundNotification,
 } from './src/services/PushNotifications';
 import { recordUserActivity } from './src/services/UserActivity';
 
@@ -180,6 +182,7 @@ export default function App() {
     async function setupNotifications() {
       try {
         await createNotificationChannel();
+        await ensureAndroidNotificationPermission();
         const token = await initPushNotifications();
         if (!token) {
           console.warn('[FCM] Permission denied or token unavailable; skipping topic subscriptions');
@@ -193,6 +196,7 @@ export default function App() {
 
         unsubscribeForeground = onForegroundNotification((title, body, data) => {
           // console.log('[FCM] Foreground → showing toast:', title, body);
+          void showForegroundNotification(title, body, data);
           setToast({ title, body, type: resolveToastType(title, data) });
         });
 

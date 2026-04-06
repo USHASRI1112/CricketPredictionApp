@@ -46,21 +46,23 @@ export const fetchMatches = async (): Promise<Match[]> => {
     // If we got matches, save them
     if (currentMatches.length > 0) {
       saveMatchesToStorage(currentMatches);
-      // console.log('✅ API matches saved:', currentMatches.length);
+      console.log('[fetchMatches] ✅ API matches saved:', currentMatches.length);
       return currentMatches;
     }
+
+    console.warn('[fetchMatches] ⚠ API returned no matches; falling back to cache');
 
     // If API is empty, silently load from storage (no error)
     const cachedMatches = await getMatchesFromStorage();
     if (cachedMatches && cachedMatches.length > 0) {
-      // console.log('📦 Using cached matches:', cachedMatches.length);
+      console.log('[fetchMatches] 📦 Using cached matches:', cachedMatches.length);
       return cachedMatches;
     }
 
     // console.log('[fetchMatches] No matches from API or cache');
     return [];
 
-  } catch (error) {
+  } catch {
     // console.error('[fetchMatches] Error fetching matches:', error);
     // Silent catch - just use storage, no error logging
     const cachedMatches = await getMatchesFromStorage();
@@ -100,7 +102,8 @@ const fetchSlidingCurrentMatches = async (): Promise<Match[]> => {
     );
 
     if (!firstRes.ok) {
-      console.error('[fetchSlidingCurrentMatches] First API call failed:', firstRes.status);
+      const text = await firstRes.text();
+      console.error('[fetchSlidingCurrentMatches] First API call failed:', firstRes.status, text);
       return [];
     }
 
@@ -121,10 +124,14 @@ const fetchSlidingCurrentMatches = async (): Promise<Match[]> => {
     let allMatches = [...firstMatches];
 
     // 🔹 Dynamic target
-    const maxTarget = premium ? 50 : MAX_UNIQUE_TARGET;
+    const maxTarget = premium ? 100 : MAX_UNIQUE_TARGET;
     const target = Math.min(totalRows, maxTarget);
 
-    const additionalCallsNeeded = Math.max(0, target - firstMatches.length);
+    const pageSize = Math.max(firstMatches.length, 1);
+    const additionalCallsNeeded = Math.max(
+      0,
+      Math.ceil((target - firstMatches.length) / pageSize)
+    );
 
     const offsets = Array.from(
       { length: additionalCallsNeeded },
@@ -171,7 +178,7 @@ const fetchSlidingCurrentMatches = async (): Promise<Match[]> => {
     // console.log(`✅ Total unique matches fetched: ${uniqueMatches.length} (Premium: ${premium})`);
     return uniqueMatches;
 
-  } catch (error) {
+  } catch {
     // console.error('[fetchSlidingCurrentMatches] Error:', error);
     // Silent error handling - return empty array
     return [];

@@ -11,7 +11,8 @@ import {
   AuthorizationStatus,
 } from '@react-native-firebase/messaging';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import notifee, { AndroidImportance } from '@notifee/react-native';
+import notifee, { AndroidImportance, AuthorizationStatus as NotifeeAuthorizationStatus } from '@notifee/react-native';
+import { Platform } from 'react-native';
 
 const FCM_TOKEN_KEY = 'fcm_token';
 
@@ -25,6 +26,25 @@ export const TOPICS = {
   PREDICTIONS:   'predictions_ready', // AI prediction generated
 } as const;
 
+export async function ensureAndroidNotificationPermission(): Promise<boolean> {
+  if (Platform.OS !== 'android') {
+    return true;
+  }
+
+  try {
+    const settings = await notifee.getNotificationSettings();
+    if (settings.authorizationStatus >= NotifeeAuthorizationStatus.AUTHORIZED) {
+      return true;
+    }
+
+    const updatedSettings = await notifee.requestPermission();
+    return updatedSettings.authorizationStatus >= NotifeeAuthorizationStatus.AUTHORIZED;
+  } catch (error) {
+    console.error('[FCM] Android notification permission check failed:', error);
+    return false;
+  }
+}
+
 // ─── Init: permission + token ──────────────────────────────────────────────
 // Call once on app start.
 // On Android < 13: permission is auto-granted, no popup shown.
@@ -32,11 +52,16 @@ export const TOPICS = {
 export async function initPushNotifications(): Promise<string | null> {
   try {
     const messaging = getMessaging();
-    const authStatus = await requestPermission(messaging);
+    let enabled = true;
 
-    const enabled =
-      authStatus === AuthorizationStatus.AUTHORIZED ||
-      authStatus === AuthorizationStatus.PROVISIONAL;
+    if (Platform.OS === 'android') {
+      enabled = await ensureAndroidNotificationPermission();
+    } else {
+      const authStatus = await requestPermission(messaging);
+      enabled =
+        authStatus === AuthorizationStatus.AUTHORIZED ||
+        authStatus === AuthorizationStatus.PROVISIONAL;
+    }
 
     if (!enabled) {
       // console.log('[FCM] Permission denied by user');
@@ -57,7 +82,7 @@ export async function initPushNotifications(): Promise<string | null> {
     return token;
 
   } catch (error) {
-    // console.error('[FCM] Init failed:', error);
+    console.error('[FCM] Init failed:', error);
     return null;
   }
 }
@@ -69,6 +94,29 @@ export async function createNotificationChannel(): Promise<void> {
     importance: AndroidImportance.HIGH,
     sound:      'default',
   });
+}
+
+export async function showForegroundNotification(
+  title: string,
+  body: string,
+  data: Record<string, string> = {},
+): Promise<void> {
+  try {
+    await notifee.displayNotification({
+      title,
+      body,
+      data,
+      android: {
+        channelId: 'cricket_alerts',
+        importance: AndroidImportance.HIGH,
+        pressAction: {
+          id: 'default',
+        },
+      },
+    });
+  } catch (error) {
+    console.error('[FCM] Failed to show foreground notification:', error);
+  }
 }
 
 // ─── Get saved token (useful for debugging / sending to backend) ───────────

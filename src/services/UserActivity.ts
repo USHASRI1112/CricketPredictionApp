@@ -13,6 +13,6 @@ export async function recordUserActivity(): Promise<void> {
     );
     // console.log('[Activity] Recorded user activity');
   } catch (e) {
-    // console.warn('[Activity] Failed to record:', e);
+    console.warn('[Activity] Failed to record:', e);
   }
 }
