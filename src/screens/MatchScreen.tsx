@@ -17,7 +17,7 @@ import { useRoute, RouteProp } from '@react-navigation/native';
 import { RootStackParamList } from '../../App';
 import { fetchPrediction, PredictionResponse } from '../services/Prediction';
 import { fetchLiveStatuses } from '../services/LiveStatus';
-import { subscribeToLiveScores } from '../services/LiveScoreCache';
+import { resolveMatchTeamFlags } from '../services/Flags';
 import { getProjectedScore } from '../helpers/ProjectedScore';
 import { Checkpoint, TestInfo, Match } from '../types';
 import Add, { RewardAdd_ } from './Add';
@@ -845,25 +845,67 @@ function IdleBobTeam({ flag, name, label, color, entranceDelay, bobDelay, onDoub
 export default function MatchScreen() {
   const route = useRoute<MatchScreenRouteProp>();
   const [match, setMatch] = useState<Match>(route.params.match);
+  const matchId = route.params.matchId || route.params.match?.id;
 
   useEffect(() => {
     setMatch(route.params.match);
   }, [route.params.match]);
 
   useEffect(() => {
-    const unsub = subscribeToLiveScores((freshMatches) => {
-      const fresh = freshMatches.find(x => x.id === match.id);
-      if (!fresh) { return; }
-      setMatch(prev => ({
-        ...prev,
-        status: fresh.status ?? prev.status,
-        score: fresh.score ?? prev.score,
-        matchEnded: fresh.matchEnded ?? prev.matchEnded,
-        matchStarted: fresh.matchStarted ?? prev.matchStarted,
-      }));
-    });
-    return () => unsub();
-  }, [match.id]);
+    if (!matchId) {
+      return;
+    }
+
+    let cancelled = false;
+
+    const refreshFromApi = async () => {
+      try {
+        const [fresh] = await fetchLiveStatuses([{ id: matchId } as Match]);
+        if (!fresh || cancelled) {
+          return;
+        }
+
+        setMatch(prev => ({
+          ...prev,
+          ...fresh,
+          status: fresh.status ?? prev.status,
+          score: fresh.score ?? prev.score,
+          matchEnded: fresh.matchEnded ?? prev.matchEnded,
+          matchStarted: fresh.matchStarted ?? prev.matchStarted,
+        }));
+      } catch {
+        // keep existing match data on transient API failures
+      }
+    };
+
+    refreshFromApi();
+    const interval = setInterval(refreshFromApi, 2 * 60 * 1000);
+
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [matchId]);
+
+  /*
+   * Firebase live-score subscription disabled intentionally.
+   * Keeping old implementation commented for later restore.
+   *
+   * useEffect(() => {
+   *   const unsub = subscribeToLiveScores((freshMatches) => {
+   *     const fresh = freshMatches.find(x => x.id === match.id);
+   *     if (!fresh) { return; }
+   *     setMatch(prev => ({
+   *       ...prev,
+   *       status: fresh.status ?? prev.status,
+   *       score: fresh.score ?? prev.score,
+   *       matchEnded: fresh.matchEnded ?? prev.matchEnded,
+   *       matchStarted: fresh.matchStarted ?? prev.matchStarted,
+   *     }));
+   *   });
+   *   return () => unsub();
+   * }, [match.id]);
+   */
 
   const [prediction, setPrediction] = useState<PredictionResponse | null>(null);
   const [loading, setLoading] = useState(false);
@@ -984,13 +1026,14 @@ export default function MatchScreen() {
     setParticles(prev => prev.filter(p => p.id !== id));
   }, []);
 
-  const t1 = { 
-    flag: match.teamInfo?.find(t => t.name === match.teams[0])?.img || null, 
-    name: match.teams[0] || 'Team A' 
+  const { team1Flag, team2Flag } = resolveMatchTeamFlags(match);
+  const t1 = {
+    flag: team1Flag,
+    name: match.teams[0] || 'Team A',
   };
-  const t2 = { 
-    flag: match.teamInfo?.find(t => t.name === match.teams[1])?.img || null, 
-    name: match.teams[1] || 'Team B' 
+  const t2 = {
+    flag: team2Flag,
+    name: match.teams[1] || 'Team B',
   };
   const left = swapped ? t2 : t1;
   const right = swapped ? t1 : t2;

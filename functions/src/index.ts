@@ -44,7 +44,10 @@ const IPL_NOTIF_THROTTLE_MS = 7 * 60 * 1000; // IPL matches
 
 // ─── Other config ─────────────────────────────────────────────────────────
 const MAX_ROWS = 100;
-const ACTIVE_WINDOW_MS = 5 * 60 * 1000; // skip if no user in last 5 min
+const ACTIVE_WINDOW_MS = 2 * 60 * 1000;    // user recently active (< 2 min)
+const IDLE_WINDOW_MS = 10 * 60 * 1000;     // user was active but idle (< 10 min)
+const ACTIVE_FETCH_INTERVAL_MS = 2 * 60 * 1000;  // API call every 2 min when active
+const IDLE_FETCH_INTERVAL_MS = 10 * 60 * 1000;   // API call every 10 min when idle
 
 // ─── Types ────────────────────────────────────────────────────────────────
 interface InningScore {
@@ -105,6 +108,10 @@ interface RateLimitDoc {
 
 interface ActivityDoc {
   lastActiveAt: number;
+}
+
+interface FetchTrackerDoc {
+  lastFetchAt: number;
 }
 
 interface PredictRequest {
@@ -228,23 +235,67 @@ function getNextMidnightUTC(): number {
 }
 
 // ─── Activity check ───────────────────────────────────────────────────────
-async function wasRecentlyActive(): Promise<boolean> {
+async function wasRecentlyActive(): Promise<{ isActive: boolean; msSinceActive: number }> {
   try {
     const snap = await admin.firestore()
       .collection(CACHE_COL).doc(ACTIVITY_DOC).get();
     if (!snap.exists) {
-      logger.info('[Activity] No activity recorded yet — skipping');
-      return false;
+      logger.info('[Activity] No activity recorded yet');
+      return { isActive: false, msSinceActive: Infinity };
     }
     const data = snap.data() as ActivityDoc;
     const msSinceActive = Date.now() - data.lastActiveAt;
     const isActive = msSinceActive < ACTIVE_WINDOW_MS;
+    const status = isActive ? '🟢 ACTIVE' : msSinceActive < IDLE_WINDOW_MS ? '🟡 IDLE' : '⚫ DORMANT';
     logger.info(
-      `[Activity] Last active: ${Math.round(msSinceActive / 1000)}s ago` +
-      ` → ${isActive ? 'ACTIVE ✅' : 'INACTIVE ⏭ skipping'}`
+      `[Activity] Last active: ${Math.round(msSinceActive / 1000)}s ago → ${status}`
     );
-    return isActive;
+    return { isActive: msSinceActive < IDLE_WINDOW_MS, msSinceActive };
   } catch {
+    return { isActive: false, msSinceActive: Infinity };
+  }
+}
+
+async function shouldFetchBasedOnActivity(): Promise<boolean> {
+  try {
+    const { isActive, msSinceActive } = await wasRecentlyActive();
+    
+    // If no activity in 10 min, never fetch
+    if (!isActive) {
+      logger.info('[Fetch] No activity in 10 min — skipping fetch');
+      return false;
+    }
+
+    // Get last fetch time
+    const snap = await admin.firestore()
+      .collection(CACHE_COL).doc('fetch_tracker').get();
+    const lastFetchAt = snap.exists ? (snap.data() as FetchTrackerDoc).lastFetchAt : 0;
+    const msSinceLastFetch = Date.now() - lastFetchAt;
+
+    // Determine required interval based on activity level
+    const isRecentlyActive = msSinceActive < ACTIVE_WINDOW_MS;
+    const requiredIntervalMs = isRecentlyActive ? ACTIVE_FETCH_INTERVAL_MS : IDLE_FETCH_INTERVAL_MS;
+
+    if (msSinceLastFetch < requiredIntervalMs) {
+      logger.info(
+        `[Fetch] Throttled (${Math.round(msSinceLastFetch / 1000)}s < ${requiredIntervalMs / 1000}s). ` +
+        `Activity: ${isRecentlyActive ? '2-min active' : '10-min idle'}`
+      );
+      return false;
+    }
+
+    // Record this fetch time
+    await admin.firestore()
+      .collection(CACHE_COL).doc('fetch_tracker')
+      .set({ lastFetchAt: Date.now() }, { merge: true });
+
+    logger.info(
+      `[Fetch] ✅ Allowed (${Math.round(msSinceLastFetch / 1000)}s ≥ ${requiredIntervalMs / 1000}s). ` +
+      `Activity: ${isRecentlyActive ? '2-min active' : '10-min idle'}`
+    );
+    return true;
+  } catch (error) {
+    logger.warn('[Fetch] Error checking activity:', error);
     return false;
   }
 }
@@ -349,25 +400,38 @@ async function fetchCurrentMatches(): Promise<Match[]> {
 // ─── Save live scores to Firestore ────────────────────────────────────────
 async function saveLiveScores(matches: Match[]): Promise<void> {
   const live = matches.filter(isLive);
-  logger.info(`[Firestore] Saving ${live.length} live matches`);
-  live.forEach(match => {
-    logger.info('[Firestore] Live match payload', {
-      id: match.id,
-      name: match.name,
-      status: match.status,
-      date: match.date,
-      dateTimeGMT: match.dateTimeGMT,
-      score: match.score ?? [],
-    });
-  });
-  await admin.firestore()
-    .collection(CACHE_COL).doc(LIVE_SCORES_DOC)
-    .set({
-      matches: live,
-      lastUpdatedAt: Date.now(),
-      totalLive: live.length,
-    } as LiveScoreDoc);
-  logger.info(`[Firestore] Saved ${live.length} live matches`);
+  const disabledPayload: LiveScoreDoc = {
+    matches: live,
+    lastUpdatedAt: Date.now(),
+    totalLive: live.length,
+  };
+
+  logger.info(`[Firestore] Live score storage disabled (doc: ${LIVE_SCORES_DOC}) — live matches seen: ${disabledPayload.totalLive}`);
+
+  /*
+   * Disabled intentionally: we do not store live match data in Firebase.
+   * Keeping old implementation commented for later restore.
+   *
+   * logger.info(`[Firestore] Saving ${live.length} live matches`);
+   * live.forEach(match => {
+   *   logger.info('[Firestore] Live match payload', {
+   *     id: match.id,
+   *     name: match.name,
+   *     status: match.status,
+   *     date: match.date,
+   *     dateTimeGMT: match.dateTimeGMT,
+   *     score: match.score ?? [],
+   *   });
+   * });
+   * await admin.firestore()
+   *   .collection(CACHE_COL).doc(LIVE_SCORES_DOC)
+   *   .set({
+   *     matches: live,
+   *     lastUpdatedAt: Date.now(),
+   *     totalLive: live.length,
+   *   } as LiveScoreDoc);
+   * logger.info(`[Firestore] Saved ${live.length} live matches`);
+   */
 }
 
 // ─── Notification tracker ─────────────────────────────────────────────────
@@ -703,13 +767,17 @@ async function checkAndNotify(matches: Match[]): Promise<void> {
 // ────────────────────────────────────────────────────────────────────────────
 //  cricketMaster — SINGLE MERGED SCHEDULER
 //
-//  Runs every 2 minutes. Guards in order:
-//  ① Activity guard   — no user in last 5 min?  → skip (zero API hit)
-//  ② Rate limit guard — near cricapi daily limit? → skip
-//  ③ Time threshold   — data still fresh?         → skip fetch
-//  ④ Fetch            — sliding window, up to 50 matches
-//  ⑤ Save             — live scores to Firestore
-//  ⑥ Notify           — EVERY DAY, 15 min throttle, max 5/match
+//  Runs every 1 minute. Dual-frequency polling:
+//  🟢 ACTIVE (< 2 min since last user action) → API call every 2 min
+//  🟡 IDLE (2–10 min since last user action)   → API call every 10 min
+//  ⚫ DORMANT (> 10 min)                        → skip (zero API hit)
+//
+//  Guards in order:
+//  ① Dual-frequency activity gate — check user activity & fetch interval
+//  ② Rate limit guard            — near cricapi daily limit? → skip
+//  ③ Fetch                       — sliding window, up to 100 matches (premium)
+//  ④ Save                        — live scores to Firestore
+//  ⑤ Notify                      — EVERY DAY, 15 min throttle, max 5/match
 // ────────────────────────────────────────────────────────────────────────────
 export const cricketMaster = onSchedule(
   {
@@ -722,14 +790,12 @@ export const cricketMaster = onSchedule(
     logger.info('[Master] ▶ Starting');
 
     try {
-      // ① Activity guard (skip during premium)
+      // ① Dual-frequency activity gate
       const isPremium = isPremiumPeriod();
-      if (!isPremium) {
-        const active = await wasRecentlyActive();
-        if (!active) {
-          logger.info('[Master] ⏭ No recent activity — skipping');
-          return;
-        }
+      const shouldFetch = await shouldFetchBasedOnActivity();
+      if (!shouldFetch) {
+        logger.info('[Master] ⏭ Fetch throttled or no user activity in 10 min — skipping');
+        return;
       }
 
       // ② Rate limit guard
@@ -739,34 +805,35 @@ export const cricketMaster = onSchedule(
         return;
       }
 
-      // ③ Time threshold guard
-      // Premium mode and IPL match hours use aggressive refresh
-      // All other times use a slower refresh cadence.
-      const snap = await admin.firestore()
-        .collection(CACHE_COL).doc(LIVE_SCORES_DOC).get();
-      const lastUpdatedAt = snap.exists
-        ? (snap.data() as LiveScoreDoc).lastUpdatedAt : 0;
-      const msSinceLast = Date.now() - lastUpdatedAt;
+      // ③ Firebase live-score freshness guard disabled.
+      // We now fetch directly from CricAPI on each schedule run and do not
+      // read match data from Firestore.
       const isActiveTime = isPremium || (isIPLSeason() && isIPLMatchHours());
-      const thresholdMs = isActiveTime ? 1 * 60 * 1000 : 7 * 60 * 1000;
-
-      if (msSinceLast < thresholdMs) {
-        logger.info(`[Master] ⏭ Data fresh (${Math.round(msSinceLast / 1000)}s) — skipping fetch`);
-        // Still run notifications even if fetch skipped
-        // (matches already in Firestore may have live ones to notify about)
-        const existingMatches = snap.exists
-          ? (snap.data() as LiveScoreDoc).matches : [];
-        if (existingMatches.length > 0) {
-          await checkAndNotify(existingMatches);
-        }
-        return;
-      }
-
       logger.info(
-        `[Master] Fetching — IPL active: ${isActiveTime},` +
-        ` last fetch: ${Math.round(msSinceLast / 60000)}min ago,` +
+        `[Master] Fetching direct from CricAPI — IPL active: ${isActiveTime},` +
         ` hits: ${rateLimit.hitsUsed}/${rateLimit.hitsLimit}`
       );
+
+      /*
+       * Disabled intentionally: no Firestore-based match freshness check.
+       *
+       * const snap = await admin.firestore()
+       *   .collection(CACHE_COL).doc(LIVE_SCORES_DOC).get();
+       * const lastUpdatedAt = snap.exists
+       *   ? (snap.data() as LiveScoreDoc).lastUpdatedAt : 0;
+       * const msSinceLast = Date.now() - lastUpdatedAt;
+       * const thresholdMs = isActiveTime ? 1 * 60 * 1000 : 7 * 60 * 1000;
+       *
+       * if (msSinceLast < thresholdMs) {
+       *   logger.info(`[Master] ⏭ Data fresh (${Math.round(msSinceLast / 1000)}s) — skipping fetch`);
+       *   const existingMatches = snap.exists
+       *     ? (snap.data() as LiveScoreDoc).matches : [];
+       *   if (existingMatches.length > 0) {
+       *     await checkAndNotify(existingMatches);
+       *   }
+       *   return;
+       * }
+       */
 
       // ④ Fetch
       const matches = await fetchCurrentMatches();

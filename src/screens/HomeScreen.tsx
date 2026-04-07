@@ -19,11 +19,9 @@ import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../../App';
 import LinearGradient from 'react-native-linear-gradient';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { fetchMatchesFromLocal } from '../services/MatchesFromLocal';
+import { useQuery } from '@tanstack/react-query';
 import { fetchMatches } from '../services/Matches';
-import { subscribeToLiveScores } from '../services/LiveScoreCache';
-import { shouldRefetchMatches } from '../helpers/ShouldRefetchMatches';
+import { getMatchDateKey, isLiveMatch, isMatchOnCurrentDate, toLocalDateKey } from '../helpers/MatchDate';
 import { Match } from '../types';
 import Add, { AppOpenAdManager } from './Add';
 
@@ -880,7 +878,7 @@ function PredictionBanner({ match, index, onPress }: { match: Match; index: numb
   //   : type === 'india'
   //   ? '🇮🇳 INDIA MATCH'
   //   : '📍 INDIA VENUE';
-  const typeLabel = "LIVE MATCH";
+  const typeLabel = isLiveMatch(match) && isMatchOnCurrentDate(match) ? 'LIVE MATCH' : 'MATCH';
 
   // ensure mutable array for gradient
   const barColor1: string[] = type === 'ipl'
@@ -974,7 +972,17 @@ function PredictionsSection({
   };
 
   const qualifiedMatches = matches
-  .filter(m => !m.matchEnded)
+  .filter(m => {
+    if (m.matchEnded) {
+      return false;
+    }
+
+    if (isLiveMatch(m) && !isMatchOnCurrentDate(m)) {
+      return false;
+    }
+
+    return true;
+  })
   .sort((a, b) => {
     return predictionPriority(a) - predictionPriority(b);
   });
@@ -1049,49 +1057,28 @@ export default function HomeScreen() {
   const orb1Y = orb1.interpolate({ inputRange: [0, 1], outputRange: [0, -18] });
   const orb2Y = orb2.interpolate({ inputRange: [0, 1], outputRange: [0,  14] });
 
-  // ── Pull matches from local cache ──────────────────
- 
-  const { data: allMatches = [] } = useQuery<Match[] | null>({
-    queryKey: ['ALL_MATCHES', 'storage'],
-    queryFn: fetchMatchesFromLocal,
+  // ── Direct CricAPI polling (no Firebase live-score subscription) ──────────────────
+  const { data: allMatches = [], refetch: refetchMatches } = useQuery<Match[]>({
+    queryKey: ['ALL_MATCHES', 'direct_api_home'],
+    queryFn: fetchMatches,
     refetchOnWindowFocus: false,
+    refetchInterval: 2 * 60 * 1000,
   });
 
-  const queryClient = useQueryClient();
   const [isRefreshing, setIsRefreshing] = useState(false);
 
-  const fetchMutation = useMutation<Match[], Error, void>({
-    mutationFn: fetchMatches,
-    onSuccess: (data: Match[]) => {
-      queryClient.setQueryData(['ALL_MATCHES', 'storage'], data);
-      setIsRefreshing(false);
-    },
-    onError: (err) => {
-      console.error('Error refetching matches:', err);
-      setIsRefreshing(false);
-    },
-  });
+  const handleRefresh = async () => {
+    if (isRefreshing) {
+      return;
+    }
 
-  const handleRefresh = () => {
     setIsRefreshing(true);
-    fetchMutation.mutate();
+    try {
+      await refetchMatches();
+    } finally {
+      setIsRefreshing(false);
+    }
   };
-
-  // Periodic refetch in premium mode
-  useEffect(() => {
-    // console.log('[HomeScreen] Setting up periodic refetch');
-    const interval = setInterval(async () => {
-      // console.log('[HomeScreen] Periodic check');
-      const should = await shouldRefetchMatches();
-      // console.log('[HomeScreen] Should refetch:', should, 'isRefreshing:', isRefreshing);
-      if (should && !isRefreshing) {
-        // console.log('[HomeScreen] Triggering refetch');
-        handleRefresh();
-      }
-    }, 60000); // Check every minute
-
-    return () => clearInterval(interval);
-  }, [isRefreshing]);
 
 
   const handleMatchPress = (match: Match) => {
@@ -1107,47 +1094,80 @@ export default function HomeScreen() {
 
   const matches: Match[] = allMatches || [];
 
-  useEffect(() => {
-    if (matches.length === 0) { return; }
-
-    const unsub = subscribeToLiveScores((freshMatches) => {
-      if (!freshMatches || freshMatches.length === 0) { return; }
-
-      queryClient.setQueryData<Match[] | null>(['ALL_MATCHES', 'storage'], (current) => {
-        if (!current || current.length === 0) {
-          return freshMatches;
-        }
-
-        const merged = new Map(current.map(m => [m.id, m]));
-        freshMatches.forEach(fresh => {
-          const existing = merged.get(fresh.id);
-          merged.set(fresh.id, {
-            ...existing,
-            ...fresh,
-            status: fresh.status ?? existing?.status,
-            score: fresh.score ?? existing?.score,
-            matchEnded: fresh.matchEnded ?? existing?.matchEnded,
-            matchStarted: fresh.matchStarted ?? existing?.matchStarted,
-          });
-        });
-
-        return Array.from(merged.values());
-      });
-    });
-
-    return () => unsub();
-  }, [matches.length, queryClient]);
+  /*
+   * Firebase live-score subscription disabled intentionally.
+   * Keeping old implementation commented for later restore.
+   *
+   * useEffect(() => {
+   *   if (matches.length === 0) { return; }
+   *
+   *   const unsub = subscribeToLiveScores((freshMatches) => {
+   *     if (!freshMatches || freshMatches.length === 0) { return; }
+   *
+   *     queryClient.setQueryData<Match[] | null>(['ALL_MATCHES', 'storage'], (current) => {
+   *       if (!current || current.length === 0) {
+   *         return freshMatches;
+   *       }
+   *
+   *       const merged = new Map(current.map(m => [m.id, m]));
+   *       freshMatches.forEach(fresh => {
+   *         const existing = merged.get(fresh.id);
+   *         merged.set(fresh.id, {
+   *           ...existing,
+   *           ...fresh,
+   *           status: fresh.status ?? existing?.status,
+   *           score: fresh.score ?? existing?.score,
+   *           matchEnded: fresh.matchEnded ?? existing?.matchEnded,
+   *           matchStarted: fresh.matchStarted ?? existing?.matchStarted,
+   *         });
+   *       });
+   *
+   *       return Array.from(merged.values());
+   *     });
+   *   });
+   *
+   *   return () => unsub();
+   * }, [matches.length, queryClient]);
+   */
 
   // Live matches for the mini-scorecard section (top 3)
-  
   const liveMatches = matches
-    .filter(m => !m.matchEnded && m.status?.toLowerCase().includes('live'))
+    .filter(m => isLiveMatch(m) && isMatchOnCurrentDate(m));
+
+  useEffect(() => {
+    const todayKey = toLocalDateKey(new Date());
+    const liveCandidates = matches.filter(isLiveMatch);
+
+    console.log('[HomeScreen] Live filter check', {
+      todayKey,
+      totalMatches: matches.length,
+      liveCandidateCount: liveCandidates.length,
+      visibleLiveCount: liveMatches.length,
+    });
+
+    liveCandidates.forEach(match => {
+      const matchDateKey = getMatchDateKey(match);
+      const includeInLive = isMatchOnCurrentDate(match);
+
+      console.log('[HomeScreen] Live candidate', {
+        id: match.id,
+        name: match.name,
+        status: match.status,
+        matchStarted: match.matchStarted,
+        matchEnded: match.matchEnded,
+        rawDate: match.date,
+        dateTimeGMT: match.dateTimeGMT,
+        matchDateKey,
+        includeInLive,
+      });
+    });
+  }, [liveMatches, matches]);
 
   return (
     <View style={styles.root}>
 
-      <Add ref={addRef} />
-      <AppOpenAdManager />
+      {/* <Add ref={addRef} /> */}
+      {/* <AppOpenAdManager /> */}
       <StatusBar barStyle="light-content" backgroundColor={C.bg} />
 
       {/* ── Coming Soon Modal ── */}
@@ -1487,4 +1507,3 @@ const styles = StyleSheet.create({
   footerLine: { width: 40, height: 1, backgroundColor: 'rgba(255,255,255,0.1)', marginBottom: 12 },
   footerText: { color: 'rgba(255,255,255,0.18)', fontSize: 9, letterSpacing: 2 },
 });
-

@@ -1,7 +1,7 @@
 /* eslint-disable react-hooks/exhaustive-deps */
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -20,12 +20,9 @@ import TodayCard from '../components/TodayCard';
 import UpcomingCard from '../components/UpcomingCard';
 import { isMatchOnCurrentDate } from '../helpers/MatchDate';
 import { splitMatches } from '../helpers/SplitMatches';
-import { shouldRefetchMatches } from '../helpers/ShouldRefetchMatches';
 import { fetchMatches } from '../services/Matches';
-import { fetchMatchesFromLocal } from '../services/MatchesFromLocal';
 import { Match } from '../types';
 import Add, { NativeAdCard } from './Add';
-import { subscribeToLiveScores } from '../services/LiveScoreCache';
 
 
 type AllMatchesScreenNavigationProp = NativeStackNavigationProp<
@@ -197,30 +194,22 @@ function RefreshLoadingOverlay({ visible }: { visible: boolean }) {
 export default function AllMatchesScreen() {
   const navigation = useNavigation<AllMatchesScreenNavigationProp>();
   const addRef = useRef<{ showAd?: (cb?: () => void) => void } | null>(null);
-  const [matches, setMatches] = useState<Match[]>([]);
   const [refreshing, setRefreshing] = useState(false);
   const [activeFilter, setActiveFilter] = useState<FilterKey>('all');
   const [startupSpinnerExpired, setStartupSpinnerExpired] = useState(false);
-  const [storageBootstrapDone, setStorageBootstrapDone] = useState(false);
 
   const headerOpacity = useRef(new Animated.Value(0)).current;
   const headerY = useRef(new Animated.Value(-16)).current;
 
-  const queryClient = useQueryClient();
-
-  const storageQuery = useQuery<Match[] | null>({
-    queryKey: ['ALL_MATCHES', 'storage'],
-    queryFn: fetchMatchesFromLocal,
+  const {
+    data: matches = [],
+    isLoading,
+    refetch,
+  } = useQuery<Match[]>({
+    queryKey: ['ALL_MATCHES', 'direct_api_all_matches'],
+    queryFn: fetchMatches,
     refetchOnWindowFocus: false,
-  });
-
-  const fetchMutation = useMutation<Match[], Error, void>({
-    mutationFn: fetchMatches,
-    onSuccess: (data: Match[]) => {
-      setMatches(data);
-      queryClient.setQueryData(['ALL_MATCHES', 'storage'], data);
-    },
-    onSettled: () => setRefreshing(false),
+    refetchInterval: 2 * 60 * 1000,
   });
 
   const { live, today, upcoming, ended, prioritizedLive, prioritizedToday, prioritizedUpcoming, prioritizedEnded } = useMemo(
@@ -262,96 +251,60 @@ export default function AllMatchesScreen() {
     return () => clearTimeout(timer);
   }, []);
 
-  useEffect(() => {
-    if (storageQuery.isSuccess || storageQuery.isError) {
-      setStorageBootstrapDone(true);
-    }
-  }, [storageQuery.isSuccess, storageQuery.isError]);
-
-  useEffect(() => {
-    // Delay the initial data check to prevent blocking navigation
-    const timer = setTimeout(() => {
-      if (storageQuery.isSuccess && (!storageQuery.data || storageQuery.data.length === 0)) {
-        fetchMutation.mutate();
-      } else if (storageQuery.data) {
-        setMatches(storageQuery.data);
-      }
-    }, 500); // Small delay to allow screen to render first
-
-    return () => clearTimeout(timer);
-  }, [storageQuery.data, storageQuery.isSuccess]);
-
-  useEffect(() => {
-    // Delay the refetch check to prevent blocking initial load
-    const timer = setTimeout(() => {
-      const checkAndRefetch = async () => {
-        if (storageQuery.isSuccess && storageQuery.data && storageQuery.data.length > 0) {
-          const shouldRefetch = await shouldRefetchMatches();
-          if (shouldRefetch) fetchMutation.mutate();
-        }
-      };
-      checkAndRefetch();
-    }, 1000); // Delay by 1 second
-
-    return () => clearTimeout(timer);
-  }, [storageQuery.isSuccess]);
-
-  // Periodic refetch in premium mode
-  useEffect(() => {
-    // console.log('[AllMatchesScreen] Setting up periodic refetch');
-    const interval = setInterval(async () => {
-      // console.log('[AllMatchesScreen] Periodic check');
-      if (storageQuery.isSuccess && storageQuery.data && storageQuery.data.length > 0 && !refreshing) {
-        const shouldRefetch = await shouldRefetchMatches();
-        // console.log('[AllMatchesScreen] Should refetch:', shouldRefetch);
-        if (shouldRefetch) {
-          // console.log('[AllMatchesScreen] Triggering refetch');
-          fetchMutation.mutate();
-        }
-      }
-    }, 120000); // Check every 2 minutes
-
-    return () => clearInterval(interval);
-  }, [storageQuery.isSuccess, storageQuery.data, refreshing]);
-
-  useEffect(() => {
-    // Delay subscription slightly to avoid blocking initial render.
-    const timer = setTimeout(() => {
-      // console.log('[LiveCache] Subscribing to Firestore live scores');
-
-      const unsub = subscribeToLiveScores((freshMatches) => {
-        // console.log(`[LiveCache] Got ${freshMatches.length} fresh live matches from Firestore`);
-
-        setMatches(prev => {
-          if (!prev || prev.length === 0) {
-            return freshMatches;
-          }
-
-          const merged = new Map(prev.map(m => [m.id, m]));
-          freshMatches.forEach(fresh => {
-            const existing = merged.get(fresh.id);
-            merged.set(fresh.id, {
-              ...existing,
-              ...fresh,
-              status: fresh.status ?? existing?.status,
-              score: fresh.score ?? existing?.score,
-              matchEnded: fresh.matchEnded ?? existing?.matchEnded,
-              matchStarted: fresh.matchStarted ?? existing?.matchStarted,
-            });
-          });
-
-          return Array.from(merged.values());
-        });
-      });
-
-      return () => {
-        // console.log('[LiveCache] Unsubscribing from live scores');
-        unsub();
-      };
-    }, 1000);
-
-    return () => clearTimeout(timer);
-  }, []);
+  /*
+   * Firebase storage bootstrap + live-score subscription disabled intentionally.
+   * Keeping old implementation commented for later restore.
+   *
+   * const queryClient = useQueryClient();
+   *
+   * const storageQuery = useQuery<Match[] | null>({
+   *   queryKey: ['ALL_MATCHES', 'storage'],
+   *   queryFn: fetchMatchesFromLocal,
+   *   refetchOnWindowFocus: false,
+   * });
+   *
+   * const fetchMutation = useMutation<Match[], Error, void>({
+   *   mutationFn: fetchMatches,
+   *   onSuccess: (data: Match[]) => {
+   *     setMatches(data);
+   *     queryClient.setQueryData(['ALL_MATCHES', 'storage'], data);
+   *   },
+   *   onSettled: () => setRefreshing(false),
+   * });
+   *
+   * useEffect(() => {
+   *   const timer = setTimeout(() => {
+   *     const unsub = subscribeToLiveScores((freshMatches) => {
+   *       setMatches(prev => {
+   *         if (!prev || prev.length === 0) {
+   *           return freshMatches;
+   *         }
+   *
+   *         const merged = new Map(prev.map(m => [m.id, m]));
+   *         freshMatches.forEach(fresh => {
+   *           const existing = merged.get(fresh.id);
+   *           merged.set(fresh.id, {
+   *             ...existing,
+   *             ...fresh,
+   *             status: fresh.status ?? existing?.status,
+   *             score: fresh.score ?? existing?.score,
+   *             matchEnded: fresh.matchEnded ?? existing?.matchEnded,
+   *             matchStarted: fresh.matchStarted ?? existing?.matchStarted,
+   *           });
+   *         });
+   *
+   *         return Array.from(merged.values());
+   *       });
+   *     });
+   *
+   *     return () => {
+   *       unsub();
+   *     };
+   *   }, 1000);
+   *
+   *   return () => clearTimeout(timer);
+   * }, []);
+   */
 
   // Counts per filter
   const counts: Record<FilterKey, number> = {
@@ -364,7 +317,7 @@ export default function AllMatchesScreen() {
 
   // Check if we have any matches to show ads
   const hasAnyMatches = matches.length > 0;
-  const showSpinnerOverlay = !startupSpinnerExpired && !storageBootstrapDone && !matches.length;
+  const showSpinnerOverlay = !startupSpinnerExpired && isLoading && !matches.length;
 
   const handleMatchPress = (match: Match) => {
     if (addRef.current?.showAd) {
@@ -433,9 +386,13 @@ export default function AllMatchesScreen() {
               refreshing={refreshing}
               tintColor="#d4a843"
               colors={['#d4a843']}
-              onRefresh={() => {
+              onRefresh={async () => {
                 setRefreshing(true);
-                fetchMutation.mutate();
+                try {
+                  await refetch();
+                } finally {
+                  setRefreshing(false);
+                }
               }}
             />
           }

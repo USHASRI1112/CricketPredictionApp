@@ -2,6 +2,7 @@
 import React, { useEffect, useRef } from 'react';
 import { View, Text, Image, StyleSheet, TouchableOpacity, Animated } from 'react-native';
 import { Match } from '../types';
+import { resolveMatchTeamFlags } from '../services/Flags';
 
 interface LiveCardProps {
   match: Match;
@@ -45,8 +46,7 @@ const LiveCard: React.FC<LiveCardProps> = ({ match, onPress }) => {
   const initials = (name = '') =>
     name.split(' ').map(s => s[0]).slice(0, 2).join('').toUpperCase();
 
-  const team1Flag = match.teamInfo && match.teamInfo.length >= 2 ? match.teamInfo[0].img : null;
-  const team2Flag = match.teamInfo && match.teamInfo.length >= 2 ? match.teamInfo[1].img : null;
+  const { team1Flag, team2Flag } = resolveMatchTeamFlags(match);
 
   const parseInning = (inning: any) => {
     if (!inning) return { label: '', runs: '', wickets: '', overs: '' };

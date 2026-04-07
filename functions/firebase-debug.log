@@ -1,0 +1,102 @@
+[debug] [2026-04-07T17:19:38.771Z] ----------------------------------------------------------------------
+[debug] [2026-04-07T17:19:38.774Z] Command:       /home/anil/.nvm/versions/node/v20.20.1/bin/node /home/anil/.nvm/versions/node/v20.20.1/bin/firebase deploy
+[debug] [2026-04-07T17:19:38.774Z] CLI Version:   15.13.0
+[debug] [2026-04-07T17:19:38.774Z] Platform:      linux
+[debug] [2026-04-07T17:19:38.775Z] Node Version:  v20.20.1
+[debug] [2026-04-07T17:19:38.775Z] Time:          Tue Apr 07 2026 22:49:38 GMT+0530 (India Standard Time)
+[debug] [2026-04-07T17:19:38.775Z] ----------------------------------------------------------------------
+[debug] 
+[debug] [2026-04-07T17:19:41.618Z] > command requires scopes: ["email","openid","https://www.googleapis.com/auth/cloudplatformprojects.readonly","https://www.googleapis.com/auth/firebase","https://www.googleapis.com/auth/cloud-platform"]
+[debug] [2026-04-07T17:19:41.619Z] > authorizing via signed-in user (sunilchowdary35@gmail.com)
+[debug] [2026-04-07T17:19:41.619Z] [iam] checking project cricket-prediction-app-a0f1c for permissions ["cloudfunctions.functions.create","cloudfunctions.functions.delete","cloudfunctions.functions.get","cloudfunctions.functions.list","cloudfunctions.functions.update","cloudfunctions.operations.get","firebase.projects.get"]
+[debug] [2026-04-07T17:19:41.620Z] Checked if tokens are valid: false, expires at: 1775505610097
+[debug] [2026-04-07T17:19:41.620Z] Checked if tokens are valid: false, expires at: 1775505610097
+[debug] [2026-04-07T17:19:41.620Z] > refreshing access token with scopes: []
+[debug] [2026-04-07T17:19:41.622Z] >>> [apiv2][query] POST https://www.googleapis.com/oauth2/v3/token [none]
+[debug] [2026-04-07T17:19:41.623Z] >>> [apiv2][body] POST https://www.googleapis.com/oauth2/v3/token [omitted]
+[debug] [2026-04-07T17:19:41.981Z] <<< [apiv2][status] POST https://www.googleapis.com/oauth2/v3/token 200
+[debug] [2026-04-07T17:19:41.982Z] <<< [apiv2][body] POST https://www.googleapis.com/oauth2/v3/token [omitted]
+[debug] [2026-04-07T17:19:41.998Z] >>> [apiv2][query] POST https://cloudresourcemanager.googleapis.com/v1/projects/cricket-prediction-app-a0f1c:testIamPermissions [none]
+[debug] [2026-04-07T17:19:41.999Z] >>> [apiv2][(partial)header] POST https://cloudresourcemanager.googleapis.com/v1/projects/cricket-prediction-app-a0f1c:testIamPermissions  x-goog-user-project=cricket-prediction-app-a0f1c
+[debug] [2026-04-07T17:19:41.999Z] >>> [apiv2][body] POST https://cloudresourcemanager.googleapis.com/v1/projects/cricket-prediction-app-a0f1c:testIamPermissions {"permissions":["cloudfunctions.functions.create","cloudfunctions.functions.delete","cloudfunctions.functions.get","cloudfunctions.functions.list","cloudfunctions.functions.update","cloudfunctions.operations.get","firebase.projects.get"]}
+[debug] [2026-04-07T17:19:43.396Z] <<< [apiv2][status] POST https://cloudresourcemanager.googleapis.com/v1/projects/cricket-prediction-app-a0f1c:testIamPermissions 200
+[debug] [2026-04-07T17:19:43.396Z] <<< [apiv2][body] POST https://cloudresourcemanager.googleapis.com/v1/projects/cricket-prediction-app-a0f1c:testIamPermissions {"permissions":["cloudfunctions.functions.create","cloudfunctions.functions.delete","cloudfunctions.functions.get","cloudfunctions.functions.list","cloudfunctions.functions.update","cloudfunctions.operations.get","firebase.projects.get"]}
+[debug] [2026-04-07T17:19:43.398Z] Checked if tokens are valid: true, expires at: 1775585980982
+[debug] [2026-04-07T17:19:43.398Z] Checked if tokens are valid: true, expires at: 1775585980982
+[debug] [2026-04-07T17:19:43.399Z] >>> [apiv2][query] POST https://iam.googleapis.com/v1/projects/cricket-prediction-app-a0f1c/serviceAccounts/cricket-prediction-app-a0f1c@appspot.gserviceaccount.com:testIamPermissions [none]
+[debug] [2026-04-07T17:19:43.399Z] >>> [apiv2][body] POST https://iam.googleapis.com/v1/projects/cricket-prediction-app-a0f1c/serviceAccounts/cricket-prediction-app-a0f1c@appspot.gserviceaccount.com:testIamPermissions {"permissions":["iam.serviceAccounts.actAs"]}
+[debug] [2026-04-07T17:19:45.088Z] <<< [apiv2][status] POST https://iam.googleapis.com/v1/projects/cricket-prediction-app-a0f1c/serviceAccounts/cricket-prediction-app-a0f1c@appspot.gserviceaccount.com:testIamPermissions 200
+[debug] [2026-04-07T17:19:45.088Z] <<< [apiv2][body] POST https://iam.googleapis.com/v1/projects/cricket-prediction-app-a0f1c/serviceAccounts/cricket-prediction-app-a0f1c@appspot.gserviceaccount.com:testIamPermissions {"permissions":["iam.serviceAccounts.actAs"]}
+[info] 
+[info] === Deploying to 'cricket-prediction-app-a0f1c'...
+[info] 
+[info] i  deploying functions 
+[info] Running command: npm --prefix "$RESOURCE_DIR" run build
+[info] ✔  functions: Finished running predeploy script. 
+[debug] [2026-04-07T17:19:46.953Z] Checked if tokens are valid: true, expires at: 1775585980982
+[debug] [2026-04-07T17:19:46.953Z] Checked if tokens are valid: true, expires at: 1775585980982
+[debug] [2026-04-07T17:19:46.953Z] >>> [apiv2][query] GET https://cloudresourcemanager.googleapis.com/v1/projects/cricket-prediction-app-a0f1c [none]
+[debug] [2026-04-07T17:19:47.274Z] <<< [apiv2][status] GET https://cloudresourcemanager.googleapis.com/v1/projects/cricket-prediction-app-a0f1c 200
+[debug] [2026-04-07T17:19:47.275Z] <<< [apiv2][body] GET https://cloudresourcemanager.googleapis.com/v1/projects/cricket-prediction-app-a0f1c {"projectNumber":"735213023668","projectId":"cricket-prediction-app-a0f1c","lifecycleState":"ACTIVE","name":"Cricket Prediction App","labels":{"firebase":"enabled","firebase-core":"disabled"},"createTime":"2026-02-21T10:57:43.504786Z"}
+[info] i  functions: preparing codebase default for deployment 
+[info] i  functions: ensuring required API cloudfunctions.googleapis.com is enabled... 
+[info] i  functions: ensuring required API cloudbuild.googleapis.com is enabled... 
+[info] i  artifactregistry: ensuring required API artifactregistry.googleapis.com is enabled... 
+[debug] [2026-04-07T17:19:47.279Z] Checked if tokens are valid: true, expires at: 1775585980982
+[debug] [2026-04-07T17:19:47.279Z] Checked if tokens are valid: true, expires at: 1775585980982
+[debug] [2026-04-07T17:19:47.280Z] >>> [apiv2][query] GET https://firebase.googleapis.com/v1beta1/projects/cricket-prediction-app-a0f1c/adminSdkConfig [none]
+[debug] [2026-04-07T17:19:48.013Z] <<< [apiv2][status] GET https://firebase.googleapis.com/v1beta1/projects/cricket-prediction-app-a0f1c/adminSdkConfig 200
+[debug] [2026-04-07T17:19:48.014Z] <<< [apiv2][body] GET https://firebase.googleapis.com/v1beta1/projects/cricket-prediction-app-a0f1c/adminSdkConfig {"projectId":"cricket-prediction-app-a0f1c","databaseURL":"https://cricket-prediction-app-a0f1c-default-rtdb.firebaseio.com","storageBucket":"cricket-prediction-app-a0f1c.firebasestorage.app"}
+[debug] [2026-04-07T17:19:48.015Z] Validating nodejs source
+[debug] [2026-04-07T17:19:49.310Z] > [functions] package.json contents: {
+  "name": "functions",
+  "scripts": {
+    "build": "tsc",
+    "build:watch": "tsc --watch",
+    "serve": "npm run build && firebase emulators:start --only functions",
+    "shell": "npm run build && firebase functions:shell",
+    "start": "npm run shell",
+    "deploy": "firebase deploy --only functions",
+    "logs": "firebase functions:log"
+  },
+  "engines": {
+    "node": "22"
+  },
+  "main": "lib/index.js",
+  "dependencies": {
+    "@react-native-firebase/firestore": "^23.8.8",
+    "axios": "^1.13.5",
+    "dotenv": "^17.3.1",
+    "firebase-admin": "^13.6.0",
+    "firebase-functions": "^7.2.3"
+  },
+  "devDependencies": {
+    "firebase-functions-test": "^3.4.1",
+    "firebase-tools": "^15.11.0",
+    "typescript": "^5.7.3"
+  },
+  "private": true
+}
+[debug] [2026-04-07T17:19:49.310Z] Building nodejs source
+[info] i  functions: Loading and analyzing source code for codebase default to determine what to deploy 
+[debug] [2026-04-07T17:19:49.313Z] Could not find functions.yaml. Must use http discovery
+[debug] [2026-04-07T17:19:49.321Z] Found firebase-functions binary at '/home/anil/mar_1/CricketPredictionApp/functions/node_modules/.bin/firebase-functions'
+[info] Serving at port 8618
+
+[info] {"structuredData":true,"severity":"INFO","message":"Cricket Functions ready ✅"}
+
+[debug] [2026-04-07T17:19:49.812Z] Got response from /__/functions.yaml {"endpoints":{"cricketMaster":{"availableMemoryMb":256,"timeoutSeconds":120,"minInstances":null,"maxInstances":10,"ingressSettings":null,"concurrency":null,"serviceAccountEmail":null,"vpc":null,"platform":"gcfv2","region":["us-central1"],"labels":{},"scheduleTrigger":{"schedule":"*/1 * * * *","retryConfig":{}},"entryPoint":"cricketMaster"},"predictMatch":{"availableMemoryMb":null,"timeoutSeconds":null,"minInstances":null,"maxInstances":10,"ingressSettings":null,"concurrency":null,"serviceAccountEmail":null,"vpc":null,"platform":"gcfv2","secretEnvironmentVariables":[{"key":"FUNCTIONS_CONFIG_EXPORT"}],"labels":{},"callableTrigger":{},"entryPoint":"predictMatch"}},"specVersion":"v1alpha1","requiredAPIs":[{"api":"cloudscheduler.googleapis.com","reason":"Needed for scheduled functions."}],"extensions":{},"params":[{"type":"secret","name":"FUNCTIONS_CONFIG_EXPORT"}]}
+[info] i  extensions: ensuring required API firebaseextensions.googleapis.com is enabled... 
+[debug] [2026-04-07T17:19:53.868Z] > command requires scopes: ["email","openid","https://www.googleapis.com/auth/cloudplatformprojects.readonly","https://www.googleapis.com/auth/firebase","https://www.googleapis.com/auth/cloud-platform"]
+[debug] [2026-04-07T17:19:53.869Z] > authorizing via signed-in user (sunilchowdary35@gmail.com)
+[debug] [2026-04-07T17:19:53.870Z] [iam] checking project cricket-prediction-app-a0f1c for permissions ["firebase.projects.get","firebaseextensions.instances.list"]
+[debug] [2026-04-07T17:19:53.871Z] Checked if tokens are valid: true, expires at: 1775585980982
+[debug] [2026-04-07T17:19:53.871Z] Checked if tokens are valid: true, expires at: 1775585980982
+[debug] [2026-04-07T17:19:53.872Z] >>> [apiv2][query] POST https://cloudresourcemanager.googleapis.com/v1/projects/cricket-prediction-app-a0f1c:testIamPermissions [none]
+[debug] [2026-04-07T17:19:53.873Z] >>> [apiv2][(partial)header] POST https://cloudresourcemanager.googleapis.com/v1/projects/cricket-prediction-app-a0f1c:testIamPermissions  x-goog-user-project=cricket-prediction-app-a0f1c
+[debug] [2026-04-07T17:19:53.873Z] >>> [apiv2][body] POST https://cloudresourcemanager.googleapis.com/v1/projects/cricket-prediction-app-a0f1c:testIamPermissions {"permissions":["firebase.projects.get","firebaseextensions.instances.list"]}
+[debug] [2026-04-07T17:19:55.310Z] <<< [apiv2][status] POST https://cloudresourcemanager.googleapis.com/v1/projects/cricket-prediction-app-a0f1c:testIamPermissions 200
+[debug] [2026-04-07T17:19:55.310Z] <<< [apiv2][body] POST https://cloudresourcemanager.googleapis.com/v1/projects/cricket-prediction-app-a0f1c:testIamPermissions {"permissions":["firebase.projects.get","firebaseextensions.instances.list"]}
+[debug] [2026-04-07T17:19:55.311Z] Checked if tokens are valid: true, expires at: 1775585980982
+[debug] [2026-04-07T17:19:55.311Z] Checked if tokens are valid: true, expires at: 1775585980982
+[debug] [2026-04-07T17:19:55.312Z] >>> [apiv2][query] GET https://firebaseextensions.googleapis.com/v1beta/projects/cricket-prediction-app-a0f1c/instances pageSize=100&pageToken=
