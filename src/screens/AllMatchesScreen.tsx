@@ -1,5 +1,5 @@
 /* eslint-disable react-hooks/exhaustive-deps */
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useRoute } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useQuery } from '@tanstack/react-query';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
@@ -16,9 +16,9 @@ import {
 import { RootStackParamList } from '../../App';
 import EndedCard from '../components/EndedCard';
 import LiveCard from '../components/LiveCard';
-import TodayCard from '../components/TodayCard';
 import UpcomingCard from '../components/UpcomingCard';
-import { isMatchOnCurrentDate } from '../helpers/MatchDate';
+import { ALL_MATCHES_QUERY_KEY } from '../constants/QueryKeys';
+import { isMatchInRecentDays } from '../helpers/MatchDate';
 import { splitMatches } from '../helpers/SplitMatches';
 import { fetchMatches } from '../services/Matches';
 import { Match } from '../types';
@@ -30,7 +30,7 @@ type AllMatchesScreenNavigationProp = NativeStackNavigationProp<
   'AllMatches'
 >;
 
-type FilterKey = 'all' | 'live' | 'today' | 'upcoming' | 'ended';
+type FilterKey = 'live' | 'upcoming' | 'ended';
 const MAX_STARTUP_SPINNER_MS = 1500;
 
 // ── Filter tab config ─────────────────────────────────────────
@@ -41,9 +41,7 @@ const FILTERS: {
   accentColor: string;
   bgColor: string;
 }[] = [
-    { key: 'all', label: 'All', icon: '🏏', accentColor: '#d4a843', bgColor: '#2e2e10' },
     { key: 'live', label: 'Live', icon: '🔴', accentColor: '#40d2e8', bgColor: '#3a1010' },
-    { key: 'today', label: 'Today', icon: '📅', accentColor: '#d4a843', bgColor: '#2e2410' },
     { key: 'upcoming', label: 'Upcoming', icon: '⏳', accentColor: '#38c8a0', bgColor: '#0e2420' },
     { key: 'ended', label: 'Ended', icon: '✅', accentColor: '#8aaa6a', bgColor: '#1a2414' },
   ];
@@ -162,9 +160,7 @@ function FilterTab({
 // ── Empty state ───────────────────────────────────────────────
 function EmptyState({ filter }: { filter: FilterKey }) {
   const config: Record<FilterKey, { icon: string; line1: string; line2: string }> = {
-    all: { icon: '🏏', line1: 'No matches yet', line2: 'Pull down to refresh' },
     live: { icon: '📡', line1: 'No live matches', line2: 'Check back soon' },
-    today: { icon: '☀️', line1: 'Nothing today', line2: 'Enjoy the off day!' },
     upcoming: { icon: '🗓️', line1: 'No upcoming matches', line2: 'Stay tuned' },
     ended: { icon: '🏆', line1: 'No completed matches yet', line2: '' },
   };
@@ -193,10 +189,18 @@ function RefreshLoadingOverlay({ visible }: { visible: boolean }) {
 // ─────────────────────────────────────────────────────────────
 export default function AllMatchesScreen() {
   const navigation = useNavigation<AllMatchesScreenNavigationProp>();
+  const route = useRoute<any>();
   const addRef = useRef<{ showAd?: (cb?: () => void) => void } | null>(null);
+  const scrollRef = useRef<ScrollView | null>(null);
+  const matchCardY = useRef<Record<string, number>>({});
+  const hasAutoScrolled = useRef(false);
   const [refreshing, setRefreshing] = useState(false);
-  const [activeFilter, setActiveFilter] = useState<FilterKey>('all');
+  const [activeFilter, setActiveFilter] = useState<FilterKey>('live');
   const [startupSpinnerExpired, setStartupSpinnerExpired] = useState(false);
+  const [layoutVersion, setLayoutVersion] = useState(0);
+
+  const focusFilter: FilterKey | undefined = route?.params?.focusFilter;
+  const focusMatchId: string | undefined = route?.params?.focusMatchId;
 
   const headerOpacity = useRef(new Animated.Value(0)).current;
   const headerY = useRef(new Animated.Value(-16)).current;
@@ -206,13 +210,14 @@ export default function AllMatchesScreen() {
     isLoading,
     refetch,
   } = useQuery<Match[]>({
-    queryKey: ['ALL_MATCHES', 'direct_api_all_matches'],
+    queryKey: ALL_MATCHES_QUERY_KEY,
     queryFn: fetchMatches,
     refetchOnWindowFocus: false,
+    staleTime: 60 * 1000,
     refetchInterval: 2 * 60 * 1000,
   });
 
-  const { live, today, upcoming, ended, prioritizedLive, prioritizedToday, prioritizedUpcoming, prioritizedEnded } = useMemo(
+  const { live, upcoming, ended, prioritizedLive, prioritizedUpcoming, prioritizedEnded } = useMemo(
     () => {
       // Separate prioritized (India/IPL) matches
       const prioritized = matches.filter(m => isIndiaOrIPLMatch(m));
@@ -221,16 +226,15 @@ export default function AllMatchesScreen() {
       const prioritizedSplit = splitMatches(prioritized);
       const nonPrioritizedSplit = splitMatches(nonPrioritized);
       
-      // Filter live matches to only today's date
-      const filterLiveToday = (arr: Match[]) => arr.filter(match => isMatchOnCurrentDate(match));
+      // Filter live matches to recent 5-day window
+      const filterLiveRecent = (arr: Match[]) => arr.filter(match => isMatchInRecentDays(match, 4));
       
       return {
         ...nonPrioritizedSplit, // Regular matches (non-prioritized)
-        prioritizedLive: filterLiveToday(prioritizedSplit.live),
-        prioritizedToday: prioritizedSplit.today,
+        prioritizedLive: filterLiveRecent(prioritizedSplit.live),
         prioritizedUpcoming: prioritizedSplit.upcoming,
         prioritizedEnded: prioritizedSplit.ended,
-        live: filterLiveToday(nonPrioritizedSplit.live),
+        live: filterLiveRecent(nonPrioritizedSplit.live),
       };
     },
     [matches],
@@ -250,6 +254,24 @@ export default function AllMatchesScreen() {
 
     return () => clearTimeout(timer);
   }, []);
+
+  useEffect(() => {
+    if (focusFilter) {
+      setActiveFilter(focusFilter);
+    }
+  }, [focusFilter]);
+
+  useEffect(() => {
+    if (!focusMatchId || hasAutoScrolled.current || activeFilter !== 'live') {
+      return;
+    }
+
+    const targetY = matchCardY.current[focusMatchId];
+    if (typeof targetY === 'number' && scrollRef.current) {
+      scrollRef.current.scrollTo({ y: Math.max(targetY - 16, 0), animated: true });
+      hasAutoScrolled.current = true;
+    }
+  }, [activeFilter, focusMatchId, layoutVersion]);
 
   /*
    * Firebase storage bootstrap + live-score subscription disabled intentionally.
@@ -308,11 +330,9 @@ export default function AllMatchesScreen() {
 
   // Counts per filter
   const counts: Record<FilterKey, number> = {
-    all: matches.length,
-    live: live.length,
-    today: today.length,
-    upcoming: upcoming.length,
-    ended: ended.length,
+    live: live.length + prioritizedLive.length,
+    upcoming: upcoming.length + prioritizedUpcoming.length,
+    ended: ended.length + prioritizedEnded.length,
   };
 
   // Check if we have any matches to show ads
@@ -320,20 +340,18 @@ export default function AllMatchesScreen() {
   const showSpinnerOverlay = !startupSpinnerExpired && isLoading && !matches.length;
 
   const handleMatchPress = (match: Match) => {
-    if (addRef.current?.showAd) {
-      addRef.current.showAd(() => {
+    // if (addRef.current?.showAd) {
+    //   addRef.current.showAd(() => {
         navigation.navigate('Match', { matchId: match.id, match });
-      });
-    } else {
-      navigation.navigate('Match', { matchId: match.id, match });
-    }
+    //   });
+    // } else {
+    // }
   };
 
   // Visibility flags
-  const showLive = activeFilter === 'all' || activeFilter === 'live';
-  const showToday = activeFilter === 'all' || activeFilter === 'today';
-  const showUpcoming = activeFilter === 'all' || activeFilter === 'upcoming';
-  const showEnded = activeFilter === 'all' || activeFilter === 'ended';
+  const showLive = activeFilter === 'live';
+  const showUpcoming = activeFilter === 'upcoming';
+  const showEnded = activeFilter === 'ended';
 
   const isFilterEmpty = counts[activeFilter] === 0;
 
@@ -351,7 +369,7 @@ export default function AllMatchesScreen() {
           <View style={styles.headerAccent} />
           <Text style={styles.headerTitle}>MATCHES</Text>
           <View style={styles.headerDivider} />
-          <Text style={styles.headerSub}>Live · Today · Upcoming · Ended</Text>
+          <Text style={styles.headerSub}>Live · Upcoming · Ended</Text>
         </Animated.View>
 
         {/* ── Filter pills ── */}
@@ -362,7 +380,7 @@ export default function AllMatchesScreen() {
           style={styles.filterBar}
         >
           {FILTERS.map(f => (
-            <FilterTab
+            <FilterTab  
               key={f.key}
               filter={f}
               isActive={activeFilter === f.key}
@@ -379,6 +397,7 @@ export default function AllMatchesScreen() {
 
         {/* ── Match list ── */}
         <ScrollView
+          ref={scrollRef}
           style={styles.scrollView}
           showsVerticalScrollIndicator={false}
           refreshControl={
@@ -404,17 +423,17 @@ export default function AllMatchesScreen() {
             <View style={styles.section}>
               <SectionHeader label="⭐ IPL / INDIA - LIVE NOW" delay={30} />
               {prioritizedLive.flatMap(match => {
-                const card = <LiveCard key={match.id} match={match} onPress={() => handleMatchPress(match)} />;
-                return [card];
-              })}
-            </View>
-          )}
-
-          {showToday && prioritizedToday.length > 0 && (
-            <View style={styles.section}>
-              <SectionHeader label="⭐ IPL / INDIA - TODAY" delay={60} />
-              {prioritizedToday.flatMap(match => {
-                const card = <TodayCard key={match.id} match={match} onPress={() => handleMatchPress(match)} />;
+                const card = (
+                  <View
+                    key={match.id}
+                    onLayout={(event) => {
+                      matchCardY.current[match.id] = event.nativeEvent.layout.y;
+                      setLayoutVersion(version => version + 1);
+                    }}
+                  >
+                    <LiveCard match={match} onPress={() => handleMatchPress(match)} />
+                  </View>
+                );
                 return [card];
               })}
             </View>
@@ -445,27 +464,23 @@ export default function AllMatchesScreen() {
             <View style={styles.section}>
               <SectionHeader label="🔴  LIVE NOW" delay={150} />
               {live.flatMap((match, i) => {
-                const card = <LiveCard key={match.id} match={match} onPress={() => handleMatchPress(match)} />;
+                const card = (
+                  <View
+                    key={match.id}
+                    onLayout={(event) => {
+                      matchCardY.current[match.id] = event.nativeEvent.layout.y;
+                      setLayoutVersion(version => version + 1);
+                    }}
+                  >
+                    <LiveCard match={match} onPress={() => handleMatchPress(match)} />
+                  </View>
+                );
                 if (hasAnyMatches && (i + 1) % 3 === 0 && i !== live.length - 1) {
                   return [card, <NativeAdCard key={`ad-live-${i}`} />];
                 }
                 return [card];
               })}
               {hasAnyMatches && <NativeAdCard key="ad-live-end" />}
-            </View>
-          )}
-
-          {showToday && today.length > 0 && (
-            <View style={styles.section}>
-              <SectionHeader label="📅  TODAY" delay={180} />
-              {today.flatMap((match, i) => {
-                const card = <TodayCard key={match.id} match={match} onPress={() => handleMatchPress(match)} />;
-                if (hasAnyMatches && (i + 1) % 3 === 0 && i !== today.length - 1) {
-                  return [card, <NativeAdCard key={`ad-today-${i}`} />];
-                }
-                return [card];
-              })}
-              {hasAnyMatches && <NativeAdCard key="ad-today-end" />}
             </View>
           )}
 

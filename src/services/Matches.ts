@@ -135,7 +135,7 @@ const fetchSlidingCurrentMatches = async (): Promise<Match[]> => {
 
     const offsets = Array.from(
       { length: additionalCallsNeeded },
-      (_, i) => i + 1
+      (_, i) => firstMatches.length + i * pageSize
     );
 
     if (offsets.length > 0) {

@@ -14,6 +14,8 @@ import {
   AppStateStatus,
 } from 'react-native';
 import { MobileAds } from 'react-native-google-mobile-ads';
+import { ALL_MATCHES_QUERY_KEY } from './src/constants/QueryKeys';
+import { getMatchesFromStorage } from './src/helpers/GetMatchesFromStorage';
 import { shouldRefetchMatches } from './src/helpers/ShouldRefetchMatches';
 import AllMatchesScreen from './src/screens/AllMatchesScreen';
 import HomeScreen from './src/screens/HomeScreen';
@@ -34,7 +36,10 @@ import { recordUserActivity } from './src/services/UserActivity';
 
 export type RootStackParamList = {
   Home: undefined;
-  AllMatches: undefined;
+  AllMatches: {
+    focusFilter?: 'live' | 'upcoming' | 'ended';
+    focusMatchId?: string;
+  } | undefined;
   Match: { matchId: string; match: Match };
 };
 
@@ -152,21 +157,35 @@ export default function App() {
     return () => sub.remove();
   }, []);
 
-  // ── Startup refetch ───────────────────────────────────────────────────
+  // ── Startup fetch + periodic refetch ─────────────────────────────────
   useEffect(() => {
+    const startupFetch = async () => {
+      try {
+        const cachedMatches = await getMatchesFromStorage();
+        if (cachedMatches.length > 0) {
+          queryClient.setQueryData(ALL_MATCHES_QUERY_KEY, cachedMatches);
+        }
+
+        const data = await fetchMatches();
+        queryClient.setQueryData(ALL_MATCHES_QUERY_KEY, data);
+      } catch (e) {
+        console.warn('Error during startup fetch', e);
+      }
+    };
+
     const checkRefetch = async () => {
       try {
         const should = await shouldRefetchMatches();
         if (should) {
           const data = await fetchMatches();
-          queryClient.setQueryData(['ALL_MATCHES', 'storage'], data);
+          queryClient.setQueryData(ALL_MATCHES_QUERY_KEY, data);
         }
       } catch (e) {
         console.warn('Error during refetch check', e);
       }
     };
     
-    checkRefetch();
+    startupFetch();
     
     // Periodic refetch every 5 minutes
     const interval = setInterval(checkRefetch, 5 * 60 * 1000);
@@ -203,7 +222,7 @@ export default function App() {
         unsubscribeTap = onNotificationTap((data) => {
           if (!data) { return; }
           if (data.screen === 'Match' && data.matchId) {
-            const cached = queryClient.getQueryData<Match[]>(['ALL_MATCHES', 'storage']);
+            const cached = queryClient.getQueryData<Match[]>(ALL_MATCHES_QUERY_KEY);
             const match  = cached?.find(m => m.id === data.matchId);
             if (match) {
               navigationRef.current?.navigate('Match', { matchId: data.matchId, match });

@@ -39,6 +39,30 @@ export const isMatchOnCurrentDate = (
   return matchDateKey === toLocalDateKey(now);
 };
 
+export const isMatchInRecentDays = (
+  match: Pick<Match, 'date' | 'dateTimeGMT'>,
+  days: number,
+  now: Date = new Date(),
+): boolean => {
+  const matchDateKey = getMatchDateKey(match);
+  if (!matchDateKey) {
+    return false;
+  }
+
+  const matchDate = new Date(`${matchDateKey}T00:00:00`);
+  if (Number.isNaN(matchDate.getTime())) {
+    return false;
+  }
+
+  const todayStart = new Date(now);
+  todayStart.setHours(0, 0, 0, 0);
+
+  const windowStart = new Date(todayStart);
+  windowStart.setDate(windowStart.getDate() - days);
+
+  return matchDate >= windowStart && matchDate <= todayStart;
+};
+
 export const isLiveMatch = (
   match: Pick<Match, 'status' | 'matchStarted' | 'matchEnded'>,
 ): boolean => {

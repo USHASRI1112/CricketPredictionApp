@@ -20,8 +20,9 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../../App';
 import LinearGradient from 'react-native-linear-gradient';
 import { useQuery } from '@tanstack/react-query';
+import { ALL_MATCHES_QUERY_KEY } from '../constants/QueryKeys';
 import { fetchMatches } from '../services/Matches';
-import { getMatchDateKey, isLiveMatch, isMatchOnCurrentDate, toLocalDateKey } from '../helpers/MatchDate';
+import { isLiveMatch, isMatchInRecentDays, isMatchOnCurrentDate } from '../helpers/MatchDate';
 import { Match } from '../types';
 import Add, { AppOpenAdManager } from './Add';
 
@@ -961,7 +962,7 @@ function PredictionsSection({
   matches: Match[];
   onMatchPress: (match: Match) => void;
 }) {
-  
+
   const predictionPriority = (match: Match): number => {
     if (!isIndiaOrIPLMatch(match)) return 3;
     const type = getPredictionType(match);
@@ -971,21 +972,27 @@ function PredictionsSection({
     return 3;
   };
 
-  const qualifiedMatches = matches
-  .filter(m => {
-    if (m.matchEnded) {
+  const isEligible = (match: Match): boolean => {
+    if (match.matchEnded) {
       return false;
     }
 
-    if (isLiveMatch(m) && !isMatchOnCurrentDate(m)) {
+    if (isLiveMatch(match) && !isMatchInRecentDays(match, 2)) {
       return false;
     }
 
     return true;
-  })
-  .sort((a, b) => {
-    return predictionPriority(a) - predictionPriority(b);
-  });
+  };
+
+  const prioritizedMatches = matches
+    .filter(m => isEligible(m) && isIndiaOrIPLMatch(m))
+    .sort((a, b) => predictionPriority(a) - predictionPriority(b));
+
+  const fallbackMatches = matches
+    .filter(isEligible)
+    .sort((a, b) => predictionPriority(a) - predictionPriority(b));
+
+  const qualifiedMatches = (prioritizedMatches.length > 0 ? prioritizedMatches : fallbackMatches).slice(0, 6);
 
   if (qualifiedMatches.length === 0) return null;
 
@@ -1059,9 +1066,10 @@ export default function HomeScreen() {
 
   // ── Direct CricAPI polling (no Firebase live-score subscription) ──────────────────
   const { data: allMatches = [], refetch: refetchMatches } = useQuery<Match[]>({
-    queryKey: ['ALL_MATCHES', 'direct_api_home'],
+    queryKey: ALL_MATCHES_QUERY_KEY,
     queryFn: fetchMatches,
     refetchOnWindowFocus: false,
+    staleTime: 60 * 1000,
     refetchInterval: 2 * 60 * 1000,
   });
 
@@ -1132,36 +1140,7 @@ export default function HomeScreen() {
 
   // Live matches for the mini-scorecard section (top 3)
   const liveMatches = matches
-    .filter(m => isLiveMatch(m) && isMatchOnCurrentDate(m));
-
-  useEffect(() => {
-    const todayKey = toLocalDateKey(new Date());
-    const liveCandidates = matches.filter(isLiveMatch);
-
-    console.log('[HomeScreen] Live filter check', {
-      todayKey,
-      totalMatches: matches.length,
-      liveCandidateCount: liveCandidates.length,
-      visibleLiveCount: liveMatches.length,
-    });
-
-    liveCandidates.forEach(match => {
-      const matchDateKey = getMatchDateKey(match);
-      const includeInLive = isMatchOnCurrentDate(match);
-
-      console.log('[HomeScreen] Live candidate', {
-        id: match.id,
-        name: match.name,
-        status: match.status,
-        matchStarted: match.matchStarted,
-        matchEnded: match.matchEnded,
-        rawDate: match.date,
-        dateTimeGMT: match.dateTimeGMT,
-        matchDateKey,
-        includeInLive,
-      });
-    });
-  }, [liveMatches, matches]);
+    .filter(m => isLiveMatch(m) && isMatchInRecentDays(m, 4));
 
   return (
     <View style={styles.root}>
@@ -1260,26 +1239,32 @@ export default function HomeScreen() {
               </View>
               <View style={styles.matchList}>
                 {liveMatches.map((m, i) => (
-                  <View key={m.id || i} style={styles.matchRow}>
-                    <LinearGradient colors={[C.surface, '#081220']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={StyleSheet.absoluteFill} />
-                    <View style={styles.liveBadge}>
-                      <AnimatedDot delay={0} />
-                      <Text style={styles.liveText}>LIVE</Text>
+                  <TouchableOpacity
+                    key={m.id || i}
+                    activeOpacity={0.9}
+                    onPress={() => navigation.navigate('AllMatches', { focusFilter: 'live', focusMatchId: m.id })}
+                  >
+                    <View style={styles.matchRow}>
+                      <LinearGradient colors={[C.surface, '#081220']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={StyleSheet.absoluteFill} />
+                      <View style={styles.liveBadge}>
+                        <AnimatedDot delay={0} />
+                        <Text style={styles.liveText}>LIVE</Text>
+                      </View>
+                      <View style={styles.matchTeamBlock}>
+                        <Text style={styles.matchTeam}>{m.teams?.[0] || '—'}</Text>
+                        <Text style={styles.matchScore}>{(m.score as any)?.[0]?.r ?? '—'}</Text>
+                      </View>
+                      <View style={styles.matchVsBlock}>
+                        <Text style={styles.matchVs}>VS</Text>
+                        <Text style={styles.matchOvers}>{(m.score as any)?.[0]?.o ? `${(m.score as any)[0].o} ov` : ''}</Text>
+                      </View>
+                      <View style={[styles.matchTeamBlock, { alignItems: 'flex-end' }]}>
+                        <Text style={styles.matchTeam}>{m.teams?.[1] || '—'}</Text>
+                        <Text style={styles.matchScore}>{(m.score as any)?.[1]?.r ?? '—'}</Text>
+                      </View>
+                      <Text style={styles.matchArrow}>›</Text>
                     </View>
-                    <View style={styles.matchTeamBlock}>
-                      <Text style={styles.matchTeam}>{m.teams?.[0] || '—'}</Text>
-                      <Text style={styles.matchScore}>{(m.score as any)?.[0]?.r ?? '—'}</Text>
-                    </View>
-                    <View style={styles.matchVsBlock}>
-                      <Text style={styles.matchVs}>VS</Text>
-                      <Text style={styles.matchOvers}>{(m.score as any)?.[0]?.o ? `${(m.score as any)[0].o} ov` : ''}</Text>
-                    </View>
-                    <View style={[styles.matchTeamBlock, { alignItems: 'flex-end' }]}>
-                      <Text style={styles.matchTeam}>{m.teams?.[1] || '—'}</Text>
-                      <Text style={styles.matchScore}>{(m.score as any)?.[1]?.r ?? '—'}</Text>
-                    </View>
-                    <Text style={styles.matchArrow}>›</Text>
-                  </View>
+                  </TouchableOpacity>
                 ))}
               </View>
             </View>

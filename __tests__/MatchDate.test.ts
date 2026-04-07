@@ -1,4 +1,4 @@
-import { getMatchDateKey, isLiveMatch, isMatchOnCurrentDate, toLocalDateKey } from '../src/helpers/MatchDate';
+import { getMatchDateKey, isLiveMatch, isMatchInRecentDays, isMatchOnCurrentDate, toLocalDateKey } from '../src/helpers/MatchDate';
 
 describe('MatchDate helpers', () => {
   const now = new Date(2026, 3, 7, 12, 0, 0);
@@ -26,5 +26,11 @@ describe('MatchDate helpers', () => {
     expect(isLiveMatch({ status: 'In Progress', matchStarted: false, matchEnded: false })).toBe(true);
     expect(isLiveMatch({ status: 'Toss', matchStarted: true, matchEnded: false })).toBe(true);
     expect(isLiveMatch({ status: 'Result', matchStarted: true, matchEnded: true })).toBe(false);
+  });
+
+  it('matches recent days window correctly', () => {
+    expect(isMatchInRecentDays({ date: '2026-04-07', dateTimeGMT: '' }, 5, now)).toBe(true);
+    expect(isMatchInRecentDays({ date: '2026-04-03', dateTimeGMT: '' }, 5, now)).toBe(true);
+    expect(isMatchInRecentDays({ date: '2026-04-01', dateTimeGMT: '' }, 5, now)).toBe(false);
   });
 });
