@@ -17,6 +17,7 @@ import { RootStackParamList } from '../../App';
 import EndedCard from '../components/EndedCard';
 import LiveCard from '../components/LiveCard';
 import UpcomingCard from '../components/UpcomingCard';
+import { ONE_HOUR_IN_MS } from '../constants/Keys';
 import { ALL_MATCHES_QUERY_KEY } from '../constants/QueryKeys';
 import { isMatchInRecentDays } from '../helpers/MatchDate';
 import { splitMatches } from '../helpers/SplitMatches';
@@ -129,7 +130,7 @@ function FilterTab({
   const badgeTextColor = isActive ? '#0d1a08' : '#5a7050';
 
   return (
-    <Pressable onPress={handlePress}>
+    <Pressable onPress={handlePress} style={styles.filterTabPressable}>
       {/* Outer View handles non-native styles; inner Animated.View only carries scale */}
       <View
         style={[
@@ -138,7 +139,7 @@ function FilterTab({
         ]}
       >
         <Animated.View
-          style={{ flexDirection: 'row', alignItems: 'center', gap: 5, transform: [{ scale }] }}
+          style={[styles.filterTabInner, { transform: [{ scale }] }]}
         >
           <Text style={styles.filterIcon}>{filter.icon}</Text>
           <Text style={[styles.filterLabel, { color: labelColor }]}>
@@ -213,8 +214,8 @@ export default function AllMatchesScreen() {
     queryKey: ALL_MATCHES_QUERY_KEY,
     queryFn: fetchMatches,
     refetchOnWindowFocus: false,
-    staleTime: 60 * 1000,
-    refetchInterval: 2 * 60 * 1000,
+    staleTime: 0,
+    refetchInterval: ONE_HOUR_IN_MS,
   });
 
   const { live, upcoming, ended, prioritizedLive, prioritizedUpcoming, prioritizedEnded } = useMemo(
@@ -301,7 +302,7 @@ export default function AllMatchesScreen() {
    *         if (!prev || prev.length === 0) {
    *           return freshMatches;
    *         }
-   *
+Pina Allignemt baledhu bro screen size match kaledhu aa live, upcoming section   *
    *         const merged = new Map(prev.map(m => [m.id, m]));
    *         freshMatches.forEach(fresh => {
    *           const existing = merged.get(fresh.id);
@@ -373,22 +374,19 @@ export default function AllMatchesScreen() {
         </Animated.View>
 
         {/* ── Filter pills ── */}
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.filterBarContent}
-          style={styles.filterBar}
-        >
-          {FILTERS.map(f => (
-            <FilterTab  
-              key={f.key}
-              filter={f}
-              isActive={activeFilter === f.key}
-              count={counts[f.key]}
-              onPress={() => setActiveFilter(f.key)}
-            />
-          ))}
-        </ScrollView>
+        <View style={styles.filterBar}>
+          <View style={styles.filterBarContent}>
+            {FILTERS.map(f => (
+              <FilterTab
+                key={f.key}
+                filter={f}
+                isActive={activeFilter === f.key}
+                count={counts[f.key]}
+                onPress={() => setActiveFilter(f.key)}
+              />
+            ))}
+          </View>
+        </View>
 
         {/* Thin separator under filter bar */}
         <View style={styles.filterSeparator} />
@@ -568,32 +566,42 @@ const styles = StyleSheet.create({
 
   // ── Filter bar ────────────────────────────────────
   filterBar: {
-    flexGrow: 0,
     marginBottom: 4,
+    paddingHorizontal: 16,
   },
   filterBarContent: {
-    paddingHorizontal: 16,
     gap: 8,
     flexDirection: 'row',
     alignItems: 'center',
     paddingBottom: 10,
   },
+  filterTabPressable: {
+    flex: 1,
+  },
   filterTab: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 13,
+    justifyContent: 'center',
+    width: '100%',
+    paddingHorizontal: 8,
     paddingVertical: 8,
     borderRadius: 24,
     borderWidth: 1,
     gap: 5,
   },
+  filterTabInner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 5,
+  },
   filterIcon: {
-    fontSize: 13,
+    fontSize: 12,
   },
   filterLabel: {
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '800',
-    letterSpacing: 0.5,
+    letterSpacing: 0.3,
   },
   countBadge: {
     minWidth: 18,

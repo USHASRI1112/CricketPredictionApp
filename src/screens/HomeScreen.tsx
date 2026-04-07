@@ -21,6 +21,7 @@ import { RootStackParamList } from '../../App';
 import LinearGradient from 'react-native-linear-gradient';
 import { useQuery } from '@tanstack/react-query';
 import { ALL_MATCHES_QUERY_KEY } from '../constants/QueryKeys';
+import { ONE_HOUR_IN_MS } from '../constants/Keys';
 import { fetchMatches } from '../services/Matches';
 import { isLiveMatch, isMatchInRecentDays, isMatchOnCurrentDate } from '../helpers/MatchDate';
 import { Match } from '../types';
@@ -1069,8 +1070,8 @@ export default function HomeScreen() {
     queryKey: ALL_MATCHES_QUERY_KEY,
     queryFn: fetchMatches,
     refetchOnWindowFocus: false,
-    staleTime: 60 * 1000,
-    refetchInterval: 2 * 60 * 1000,
+    staleTime: 0,
+    refetchInterval: ONE_HOUR_IN_MS,
   });
 
   const [isRefreshing, setIsRefreshing] = useState(false);
