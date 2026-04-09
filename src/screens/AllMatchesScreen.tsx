@@ -17,9 +17,9 @@ import { RootStackParamList } from '../../App';
 import EndedCard from '../components/EndedCard';
 import LiveCard from '../components/LiveCard';
 import UpcomingCard from '../components/UpcomingCard';
-import { ONE_HOUR_IN_MS } from '../constants/Keys';
+import { THIRTY_SECONDS_IN_MS } from '../constants/Keys';
 import { ALL_MATCHES_QUERY_KEY } from '../constants/QueryKeys';
-import { isMatchInRecentDays } from '../helpers/MatchDate';
+import { isLiveMatch, isMatchInRecentDays } from '../helpers/MatchDate';
 import { splitMatches } from '../helpers/SplitMatches';
 import { fetchMatches } from '../services/Matches';
 import { Match } from '../types';
@@ -209,14 +209,45 @@ export default function AllMatchesScreen() {
   const {
     data: matches = [],
     isLoading,
+    isRefetching,
     refetch,
   } = useQuery<Match[]>({
     queryKey: ALL_MATCHES_QUERY_KEY,
     queryFn: fetchMatches,
     refetchOnWindowFocus: false,
     staleTime: 0,
-    refetchInterval: ONE_HOUR_IN_MS,
+    refetchInterval: THIRTY_SECONDS_IN_MS,
   });
+  const wasRefetchingAllMatches = useRef(false);
+
+  useEffect(() => {
+    if (isRefetching) {
+      console.log('[Polling][AllMatches] API refetch started', new Date().toISOString());
+      wasRefetchingAllMatches.current = true;
+      return;
+    }
+
+    if (wasRefetchingAllMatches.current) {
+      const liveScoreSnapshot = matches
+        .filter(isLiveMatch)
+        .map(m => ({
+          id: m.id,
+          teams: m.teams,
+          status: m.status,
+          score: m.score,
+        }));
+
+      console.log(
+        '[Polling][AllMatches] API refetch finished',
+        new Date().toISOString(),
+        '| matches:',
+        matches.length,
+        '| live scores:',
+        liveScoreSnapshot,
+      );
+      wasRefetchingAllMatches.current = false;
+    }
+  }, [isRefetching, matches.length]);
 
   const { live, upcoming, ended, prioritizedLive, prioritizedUpcoming, prioritizedEnded } = useMemo(
     () => {
@@ -429,7 +460,11 @@ Pina Allignemt baledhu bro screen size match kaledhu aa live, upcoming section  
                       setLayoutVersion(version => version + 1);
                     }}
                   >
-                    <LiveCard match={match} onPress={() => handleMatchPress(match)} />
+                    <LiveCard
+                      match={match}
+                      onPress={() => handleMatchPress(match)}
+                      isRefetching={isRefetching}
+                    />
                   </View>
                 );
                 return [card];
@@ -470,7 +505,11 @@ Pina Allignemt baledhu bro screen size match kaledhu aa live, upcoming section  
                       setLayoutVersion(version => version + 1);
                     }}
                   >
-                    <LiveCard match={match} onPress={() => handleMatchPress(match)} />
+                    <LiveCard
+                      match={match}
+                      onPress={() => handleMatchPress(match)}
+                      isRefetching={isRefetching}
+                    />
                   </View>
                 );
                 if (hasAnyMatches && (i + 1) % 3 === 0 && i !== live.length - 1) {

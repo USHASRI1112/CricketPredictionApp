@@ -21,11 +21,12 @@ import { RootStackParamList } from '../../App';
 import LinearGradient from 'react-native-linear-gradient';
 import { useQuery } from '@tanstack/react-query';
 import { ALL_MATCHES_QUERY_KEY } from '../constants/QueryKeys';
-import { ONE_HOUR_IN_MS } from '../constants/Keys';
+import { THIRTY_SECONDS_IN_MS } from '../constants/Keys';
 import { fetchMatches } from '../services/Matches';
 import { isLiveMatch, isMatchInRecentDays, isMatchOnCurrentDate } from '../helpers/MatchDate';
 import { Match } from '../types';
 import Add, { AppOpenAdManager } from './Add';
+import { getTeamMappedInnings } from '../helpers/ScoreMapping';
 
 type HomeScreenNavigationProp = NativeStackNavigationProp<RootStackParamList, 'Home'>;
 
@@ -1066,13 +1067,43 @@ export default function HomeScreen() {
   const orb2Y = orb2.interpolate({ inputRange: [0, 1], outputRange: [0,  14] });
 
   // ── Direct CricAPI polling (no Firebase live-score subscription) ──────────────────
-  const { data: allMatches = [], refetch: refetchMatches } = useQuery<Match[]>({
+  const { data: allMatches = [], refetch: refetchMatches, isRefetching } = useQuery<Match[]>({
     queryKey: ALL_MATCHES_QUERY_KEY,
     queryFn: fetchMatches,
     refetchOnWindowFocus: false,
     staleTime: 0,
-    refetchInterval: ONE_HOUR_IN_MS,
+    refetchInterval: THIRTY_SECONDS_IN_MS,
   });
+  const wasRefetchingHome = useRef(false);
+
+  useEffect(() => {
+    if (isRefetching) {
+      console.log('[Polling][Home] API refetch started', new Date().toISOString());
+      wasRefetchingHome.current = true;
+      return;
+    }
+
+    if (wasRefetchingHome.current) {
+      const liveScoreSnapshot = allMatches
+        .filter(isLiveMatch)
+        .map(m => ({
+          id: m.id,
+          teams: m.teams,
+          status: m.status,
+          score: m.score,
+        }));
+
+      console.log(
+        '[Polling][Home] API refetch finished',
+        new Date().toISOString(),
+        '| matches:',
+        allMatches.length,
+        '| live scores:',
+        liveScoreSnapshot,
+      );
+      wasRefetchingHome.current = false;
+    }
+  }, [allMatches, isRefetching]);
 
   const [isRefreshing, setIsRefreshing] = useState(false);
 
@@ -1083,7 +1114,9 @@ export default function HomeScreen() {
 
     setIsRefreshing(true);
     try {
+      console.log('[Polling][Home] Manual refresh started', new Date().toISOString());
       await refetchMatches();
+      console.log('[Polling][Home] Manual refresh finished', new Date().toISOString());
     } finally {
       setIsRefreshing(false);
     }
@@ -1239,34 +1272,38 @@ export default function HomeScreen() {
                 </Pressable>
               </View>
               <View style={styles.matchList}>
-                {liveMatches.map((m, i) => (
-                  <TouchableOpacity
-                    key={m.id || i}
-                    activeOpacity={0.9}
-                    onPress={() => navigation.navigate('AllMatches', { focusFilter: 'live', focusMatchId: m.id })}
-                  >
-                    <View style={styles.matchRow}>
-                      <LinearGradient colors={[C.surface, '#081220']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={StyleSheet.absoluteFill} />
-                      <View style={styles.liveBadge}>
-                        <AnimatedDot delay={0} />
-                        <Text style={styles.liveText}>LIVE</Text>
+                {liveMatches.map((m, i) => {
+                  const { team1Inning, team2Inning } = getTeamMappedInnings(m);
+
+                  return (
+                    <TouchableOpacity
+                      key={m.id || i}
+                      activeOpacity={0.9}
+                      onPress={() => navigation.navigate('AllMatches', { focusFilter: 'live', focusMatchId: m.id })}
+                    >
+                      <View style={styles.matchRow}>
+                        <LinearGradient colors={[C.surface, '#081220']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={StyleSheet.absoluteFill} />
+                        <View style={styles.liveBadge}>
+                          <AnimatedDot delay={0} />
+                          <Text style={styles.liveText}>LIVE</Text>
+                        </View>
+                        <View style={styles.matchTeamBlock}>
+                          <Text style={styles.matchTeam}>{m.teams?.[0] || '—'}</Text>
+                          <Text style={styles.matchScore}>{team1Inning?.runs || '—'}</Text>
+                        </View>
+                        <View style={styles.matchVsBlock}>
+                          <Text style={styles.matchVs}>VS</Text>
+                          <Text style={styles.matchOvers}>{team1Inning?.overs ? `${team1Inning.overs} ov` : ''}</Text>
+                        </View>
+                        <View style={[styles.matchTeamBlock, { alignItems: 'flex-end' }]}>
+                          <Text style={styles.matchTeam}>{m.teams?.[1] || '—'}</Text>
+                          <Text style={styles.matchScore}>{team2Inning?.runs || '—'}</Text>
+                        </View>
+                        <Text style={styles.matchArrow}>›</Text>
                       </View>
-                      <View style={styles.matchTeamBlock}>
-                        <Text style={styles.matchTeam}>{m.teams?.[0] || '—'}</Text>
-                        <Text style={styles.matchScore}>{(m.score as any)?.[0]?.r ?? '—'}</Text>
-                      </View>
-                      <View style={styles.matchVsBlock}>
-                        <Text style={styles.matchVs}>VS</Text>
-                        <Text style={styles.matchOvers}>{(m.score as any)?.[0]?.o ? `${(m.score as any)[0].o} ov` : ''}</Text>
-                      </View>
-                      <View style={[styles.matchTeamBlock, { alignItems: 'flex-end' }]}>
-                        <Text style={styles.matchTeam}>{m.teams?.[1] || '—'}</Text>
-                        <Text style={styles.matchScore}>{(m.score as any)?.[1]?.r ?? '—'}</Text>
-                      </View>
-                      <Text style={styles.matchArrow}>›</Text>
-                    </View>
-                  </TouchableOpacity>
-                ))}
+                    </TouchableOpacity>
+                  );
+                })}
               </View>
             </View>
           )}

@@ -19,6 +19,7 @@ import { fetchPrediction, PredictionResponse } from '../services/Prediction';
 import { fetchLiveStatuses } from '../services/LiveStatus';
 import { resolveMatchTeamFlags } from '../services/Flags';
 import { getProjectedScore } from '../helpers/ProjectedScore';
+import { THIRTY_SECONDS_IN_MS } from '../constants/Keys';
 import { Checkpoint, TestInfo, Match } from '../types';
 import Add, { RewardAdd_ } from './Add';
 
@@ -859,9 +860,11 @@ export default function MatchScreen() {
     let cancelled = false;
 
     const refreshFromApi = async () => {
+      console.log('[Polling][Match] API refetch started', new Date().toISOString(), '| matchId:', matchId);
       try {
         const [fresh] = await fetchLiveStatuses([{ id: matchId } as Match]);
         if (!fresh || cancelled) {
+          console.log('[Polling][Match] API refetch finished (no update)', new Date().toISOString(), '| matchId:', matchId);
           return;
         }
 
@@ -873,17 +876,30 @@ export default function MatchScreen() {
           matchEnded: fresh.matchEnded ?? prev.matchEnded,
           matchStarted: fresh.matchStarted ?? prev.matchStarted,
         }));
+        console.log(
+          '[Polling][Match] API refetch finished (updated)',
+          new Date().toISOString(),
+          '| matchId:',
+          matchId,
+          '| status:',
+          fresh.status,
+          '| score:',
+          fresh.score,
+        );
       } catch {
+        console.log('[Polling][Match] API refetch failed', new Date().toISOString(), '| matchId:', matchId);
         // keep existing match data on transient API failures
       }
     };
 
+    console.log('[Polling][Match] Started 30s interval', new Date().toISOString(), '| matchId:', matchId);
     refreshFromApi();
-    const interval = setInterval(refreshFromApi, 2 * 60 * 1000);
+    const interval = setInterval(refreshFromApi, THIRTY_SECONDS_IN_MS);
 
     return () => {
       cancelled = true;
       clearInterval(interval);
+      console.log('[Polling][Match] Cleared 30s interval', new Date().toISOString(), '| matchId:', matchId);
     };
   }, [matchId]);
 

@@ -1,8 +1,33 @@
 import { CricketApiEndpoints } from '../constants/Api';
+import {
+  FIFTEEN_MINUTES_IN_MS,
+  LAST_CURRENT_FETCH_TIME_KEY,
+  LAST_FETCH_TIME_KEY,
+  ONE_HOUR_IN_MS,
+  STORAGE_KEY,
+} from '../constants/Keys';
+import { getMatchDateKey } from '../helpers/MatchDate';
 import { saveMatchesToStorage } from '../helpers/SaveMatchesToStorage';
 import { Match } from '../types';
 import { getMatchesFromStorage } from '../helpers/GetMatchesFromStorage';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { fetchLiveStatuses } from './LiveStatus';
+
+export type PollingSource =
+  | 'API_FRESH'
+  | 'CURRENT_API_15M'
+  | 'CACHE_BASE_LIVE_API_30S'
+  | 'CACHE_HOURLY_WINDOW_NO_LIVE'
+  | 'CACHE_FALLBACK_EMPTY_API'
+  | 'CACHE_FALLBACK_API_ERROR';
+
+let lastPollingSource: PollingSource = 'API_FRESH';
+
+export const getLastPollingSource = (): PollingSource => lastPollingSource;
+
+const setLastPollingSource = (source: PollingSource) => {
+  lastPollingSource = source;
+};
 
 const MAX_DAILY_FULL_FETCH = 5;
 const MAX_UNIQUE_TARGET = 29;
@@ -151,25 +176,170 @@ const mergeByMatchId = (primary: Match[], secondary: Match[]): Match[] => {
   return Array.from(merged.values());
 };
 
-export const fetchMatches = async (): Promise<Match[]> => {
-  try {
-    const [allMatches, currentMatches] = await Promise.all([
-      fetchAllMatches(),
-      fetchSlidingCurrentMatches(),
-    ]);
+const shouldRunCadence = async (key: string, intervalMs: number): Promise<boolean> => {
+  const raw = await AsyncStorage.getItem(key);
+  if (!raw) {
+    return true;
+  }
 
-    const mergedMatches = mergeByMatchId(allMatches, currentMatches);
+  const ts = parseInt(raw, 10);
+  if (Number.isNaN(ts)) {
+    return true;
+  }
 
-    if (mergedMatches.length > 0) {
-      await saveMatchesToStorage(mergedMatches);
-      return mergedMatches;
+  return Date.now() - ts >= intervalMs;
+};
+
+const markCadence = async (key: string): Promise<void> => {
+  await AsyncStorage.setItem(key, Date.now().toString());
+};
+
+const filterOlderThanDays = (matches: Match[], days: number): Match[] => {
+  const todayStart = new Date();
+  todayStart.setHours(0, 0, 0, 0);
+
+  const windowStart = new Date(todayStart);
+  windowStart.setDate(windowStart.getDate() - days);
+
+  return matches.filter(match => {
+    const key = getMatchDateKey(match);
+    if (!key) {
+      return true;
     }
 
+    const date = new Date(`${key}T00:00:00`);
+    if (Number.isNaN(date.getTime())) {
+      return true;
+    }
+
+    return date >= windowStart;
+  });
+};
+
+export const fetchMatches = async (): Promise<Match[]> => {
+  try {
     const cachedMatches = await getMatchesFromStorage();
-    return cachedMatches || [];
+    let workingMatches = cachedMatches;
+
+    // 30s cadence: refresh each live match using match_info endpoint.
+    const liveMatches = workingMatches.filter(match => match.matchStarted && !match.matchEnded);
+    if (liveMatches.length > 0) {
+      const liveUpdates = await fetchLiveStatuses(liveMatches);
+      const updatesById = new Map(liveUpdates.map(match => [match.id, match]));
+
+      workingMatches = workingMatches.map(match => {
+        const liveUpdate = updatesById.get(match.id);
+        if (!liveUpdate) {
+          return match;
+        }
+
+        return {
+          ...match,
+          ...liveUpdate,
+          status: liveUpdate.status ?? match.status,
+          score: liveUpdate.score ?? match.score,
+          matchEnded: liveUpdate.matchEnded ?? match.matchEnded,
+          matchStarted: liveUpdate.matchStarted ?? match.matchStarted,
+        };
+      });
+
+      await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(workingMatches));
+      setLastPollingSource('CACHE_BASE_LIVE_API_30S');
+      console.log(
+        '[Polling][Source] CACHE_BASE_LIVE_API_30S',
+        new Date().toISOString(),
+        '| cached:',
+        cachedMatches.length,
+        '| live checked:',
+        liveMatches.length,
+        '| live updated:',
+        liveUpdates.length,
+      );
+    } else {
+      setLastPollingSource('CACHE_HOURLY_WINDOW_NO_LIVE');
+      console.log(
+        '[Polling][Source] CACHE_HOURLY_WINDOW_NO_LIVE',
+        new Date().toISOString(),
+        '| cached:',
+        cachedMatches.length,
+      );
+    }
+
+    const shouldDoFullFetch = await shouldRunCadence(LAST_FETCH_TIME_KEY, ONE_HOUR_IN_MS);
+    const shouldDoCurrentFetch = await shouldRunCadence(
+      LAST_CURRENT_FETCH_TIME_KEY,
+      FIFTEEN_MINUTES_IN_MS,
+    );
+
+    if (shouldDoFullFetch) {
+      await markCadence(LAST_FETCH_TIME_KEY);
+      await markCadence(LAST_CURRENT_FETCH_TIME_KEY);
+
+      const [allMatches, currentMatches] = await Promise.all([
+        fetchAllMatches(),
+        fetchSlidingCurrentMatches(),
+      ]);
+
+      const mergedMatches = mergeByMatchId(allMatches, currentMatches);
+      if (mergedMatches.length > 0) {
+        const visibleMatches = filterOlderThanDays(mergedMatches, 4);
+        setLastPollingSource('API_FRESH');
+        console.log(
+          '[Polling][Source] API_FRESH',
+          new Date().toISOString(),
+          '| all:',
+          allMatches.length,
+          '| current:',
+          currentMatches.length,
+          '| merged:',
+          mergedMatches.length,
+          '| visible:',
+          visibleMatches.length,
+        );
+        await saveMatchesToStorage(visibleMatches);
+        return visibleMatches;
+      }
+    }
+
+    if (shouldDoCurrentFetch) {
+      await markCadence(LAST_CURRENT_FETCH_TIME_KEY);
+
+      const currentMatches = await fetchSlidingCurrentMatches();
+      if (currentMatches.length > 0) {
+        const mergedWithCurrent = mergeByMatchId(workingMatches, currentMatches);
+        const visibleMatches = filterOlderThanDays(mergedWithCurrent, 4);
+        await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(visibleMatches));
+        setLastPollingSource('CURRENT_API_15M');
+        console.log(
+          '[Polling][Source] CURRENT_API_15M',
+          new Date().toISOString(),
+          '| current:',
+          currentMatches.length,
+          '| merged:',
+          mergedWithCurrent.length,
+          '| visible:',
+          visibleMatches.length,
+        );
+        return visibleMatches;
+      }
+    }
+
+    const visibleFromWorking = filterOlderThanDays(workingMatches, 4);
+    await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(visibleFromWorking));
+    return visibleFromWorking;
 
   } catch {
     const cachedMatches = await getMatchesFromStorage();
-    return cachedMatches || [];
+    const visibleCachedMatches = filterOlderThanDays(cachedMatches || [], 4);
+    setLastPollingSource('CACHE_FALLBACK_API_ERROR');
+    console.log(
+      '[Polling][Source] CACHE_FALLBACK_API_ERROR',
+      new Date().toISOString(),
+      '| cached:',
+      cachedMatches?.length || 0,
+      '| visible:',
+      visibleCachedMatches.length,
+    );
+    return visibleCachedMatches;
   }
 };

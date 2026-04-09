@@ -1,12 +1,13 @@
-/* eslint-disable react-native/no-inline-styles */
 import React, { useEffect, useRef } from 'react';
 import { View, Text, Image, StyleSheet, TouchableOpacity, Animated } from 'react-native';
 import { Match } from '../types';
 import { resolveMatchTeamFlags } from '../services/Flags';
+import { getTeamMappedInnings } from '../helpers/ScoreMapping';
 
 interface LiveCardProps {
   match: Match;
   onPress: () => void;
+  isRefetching?: boolean;
 }
 
 function PulseDot() {
@@ -42,29 +43,33 @@ const dotStyles = StyleSheet.create({
   core: { width: 7,  height: 7,  borderRadius: 3.5,   backgroundColor: '#7dd3fc' },
 });
 
-const LiveCard: React.FC<LiveCardProps> = ({ match, onPress }) => {
+const LiveCard: React.FC<LiveCardProps> = ({
+  match,
+  onPress,
+  isRefetching = false,
+}) => {
   const initials = (name = '') =>
     name.split(' ').map(s => s[0]).slice(0, 2).join('').toUpperCase();
 
   const { team1Flag, team2Flag } = resolveMatchTeamFlags(match);
 
-  const parseInning = (inning: any) => {
-    if (!inning) return { label: '', runs: '', wickets: '', overs: '' };
-    return {
-      label:   inning.inning || inning.title || '',
-      runs:    (inning.r    ?? inning.runs  ?? '') + '',
-      wickets: (inning.w    ?? inning.wkts  ?? '') + '',
-      overs:   (inning.o    ?? inning.overs ?? '') + '',
-    };
+  const { team1Inning, team2Inning } = getTeamMappedInnings(match);
+  const rawScore1 = match.score?.[0];
+  const rawScore2 = match.score?.[1];
+
+  const inning1 = {
+    label: team1Inning?.label || rawScore1?.inning || '',
+    runs: team1Inning?.runs || rawScore1?.r || '',
+    wickets: team1Inning?.wickets || rawScore1?.w || '',
+    overs: team1Inning?.overs || rawScore1?.o || '',
   };
 
-  const inning1 = Array.isArray(match.score) && match.score.length > 0
-    ? parseInning(match.score[0])
-    : { label: '', runs: '', wickets: '', overs: '' };
-
-  const inning2 = Array.isArray(match.score) && match.score.length > 1
-    ? parseInning(match.score[1])
-    : { label: '', runs: '', wickets: '', overs: '' };
+  const inning2 = {
+    label: team2Inning?.label || rawScore2?.inning || '',
+    runs: team2Inning?.runs || rawScore2?.r || '',
+    wickets: team2Inning?.wickets || rawScore2?.w || '',
+    overs: team2Inning?.overs || rawScore2?.o || '',
+  };
 
   // ── Format local time from ISO dateTimeGMT ──────────────────────────
   const localTime = match.dateTimeGMT
@@ -187,6 +192,13 @@ const LiveCard: React.FC<LiveCardProps> = ({ match, onPress }) => {
           </>
         ) : null}
       </View>
+
+      {isRefetching ? (
+        <View style={styles.pollingIndicatorWrap}>
+          <View style={styles.pollingDot} />
+          <Text style={styles.pollingText}>Refreshing live score</Text>
+        </View>
+      ) : null}
 
     </TouchableOpacity>
   );
@@ -396,6 +408,28 @@ const styles = StyleSheet.create({
     color: C.accentSoft,  // slightly brighter than metaText so time stands out
     fontSize: 11,
     fontWeight: '600',
+  },
+  pollingIndicatorWrap: {
+    borderTopWidth: 1,
+    borderTopColor: C.borderFaint,
+    paddingTop: 8,
+    paddingBottom: 10,
+    justifyContent: 'center',
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 6,
+  },
+  pollingDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#ef4444',
+  },
+  pollingText: {
+    color: '#fca5a5',
+    fontSize: 10,
+    letterSpacing: 0.6,
+    fontWeight: '700',
   },
 });
 
