@@ -16,10 +16,8 @@ import {
 import { useRoute, RouteProp } from '@react-navigation/native';
 import { RootStackParamList } from '../../App';
 import { fetchPrediction, PredictionResponse } from '../services/Prediction';
-import { fetchLiveStatuses } from '../services/LiveStatus';
 import { resolveMatchTeamFlags } from '../services/Flags';
 import { getProjectedScore } from '../helpers/ProjectedScore';
-import { THIRTY_SECONDS_IN_MS } from '../constants/Keys';
 import { Checkpoint, TestInfo, Match } from '../types';
 import Add, { RewardAdd_ } from './Add';
 
@@ -135,6 +133,9 @@ function getDynamicColors(matchType?: string) {
 
 
 function ProjectedScoreCard({ match, addRef }: { match: Match, addRef: React.RefObject<{ showAd?: (cb?: () => void) => void } | null> }) {
+  // Live score-based projections are disabled in this branch.
+  return null;
+
   const [unlocked, setUnlocked] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const fadeAnim = useRef(new Animated.Value(0)).current;
@@ -155,172 +156,7 @@ function ProjectedScoreCard({ match, addRef }: { match: Match, addRef: React.Ref
     ])).start();
   }, [fadeAnim, lockScale, slideAnim]);
 
-  const isLive = match.status?.toLowerCase().includes('live') || match.matchStarted;
-  if (!isLive || !match.score || match.score.length === 0 || !match.matchType) return null;
-
-  const currentInning = match.score[match.score.length - 1];
-  if (!currentInning) return null;
-
-  const projection = getProjectedScore(currentInning, match.matchType);
-  if (!projection) return null;
-
-  const inningLabel = 'Current Innings';
-  const shortInning = inningLabel.length > 30 ? inningLabel.slice(0, 28) + '…' : inningLabel;
-
-  // Get dynamic colors based on match type
-  const colors = getDynamicColors(match.matchType);
-
-  const handleWatchAd = () => {
-    if (addRef.current?.showAd) {
-      addRef.current.showAd(() => {
-        // Show loading spinner briefly
-        setIsLoading(true);
-
-        // Simulate data processing, then unlock
-        setTimeout(() => {
-          setIsLoading(false);
-          setUnlocked(true);
-          Animated.timing(revealAnim, {
-            toValue: 1, duration: 500, useNativeDriver: true,
-          }).start();
-        }, 3200); // Show loader for 800ms
-      });
-    } else {
-      // fallback if ad not loaded — unlock anyway
-      setUnlocked(true);
-    }
-  };
-
-  return (
-    <Animated.View style={[
-      projStyles.card,
-      {
-        opacity: fadeAnim,
-        transform: [{ translateY: slideAnim }],
-        borderColor: colors.accentBorder,
-        backgroundColor: 'rgba(12,20,44,0.95)',
-      },
-    ]}>
-      {/* Hidden Add component just for this card */}
-
-      <View style={[projStyles.topGlow, { backgroundColor: colors.accentLight }]} />
-
-
-
-      {/* Header — always visible */}
-      <View style={projStyles.header}>
-        <View style={projStyles.headerLeft}>
-          <Text style={[projStyles.title, { color: colors.text }]}>PROJECTED SCORE📈</Text>
-          <View style={[projStyles.titleUnderline, { backgroundColor: colors.accent }]} />
-        </View>
-        <View style={[projStyles.inningBadge, { backgroundColor: colors.accentLight, borderColor: colors.accentBorder }]}>
-          <Text style={[projStyles.inningBadgeText, { color: colors.text }]} numberOfLines={1}>{shortInning}</Text>
-        </View>
-      </View>
-
-      {/* Current score strip — always visible */}
-      <View style={projStyles.currentStrip}>
-        <View style={projStyles.currentItem}>
-          <Text style={projStyles.currentLabel}>RUNS</Text>
-          <Text style={[projStyles.currentValue, { color: colors.primary }]}>{currentInning.r}</Text>
-        </View>
-        <View style={projStyles.currentDivider} />
-        <View style={projStyles.currentItem}>
-          <Text style={projStyles.currentLabel}>WICKETS</Text>
-          <Text style={[projStyles.currentValue, { color: colors.secondary }]}>{currentInning.w}</Text>
-        </View>
-        <View style={projStyles.currentDivider} />
-        <View style={projStyles.currentItem}>
-          <Text style={projStyles.currentLabel}>OVERS</Text>
-          <Text style={[projStyles.currentValue, { color: colors.accent }]}>{currentInning.o}</Text>
-        </View>
-        <View style={projStyles.currentDivider} />
-        <View style={projStyles.currentItem}>
-          <Text style={projStyles.currentLabel}>CRR</Text>
-          <Text style={[projStyles.currentValue, { color: colors.text }]}>
-            {currentInning.o > 0
-              ? (currentInning.r / (Math.floor(currentInning.o) + ((currentInning.o % 1) * 10) / 6)).toFixed(2)
-              : '0.00'}
-          </Text>
-        </View>
-      </View>
-
-      {/* ── LOCKED STATE ── */}
-      {!unlocked && (
-        <View style={projStyles.lockedWrap}>
-          {/* Blurred pill previews */}
-          <View style={projStyles.blurPreview} pointerEvents="none">
-            <View style={projStyles.blurRow}>
-              {[1, 2].map(i => (
-                <View key={i} style={[projStyles.pill, projStyles.blurPill]}>
-                  <View style={projStyles.blurLine} />
-                  <View style={[projStyles.blurLine, { width: 40, marginTop: 6 }]} />
-                  <View style={[projStyles.blurLine, { width: 55, marginTop: 6, height: 28 }]} />
-                </View>
-              ))}
-            </View>
-            {/* Overlay gradient */}
-            <View style={projStyles.blurOverlay} />
-          </View>
-
-          {/* Lock CTA */}
-          <View style={projStyles.lockCard}>
-            <Animated.Text style={[projStyles.lockIcon, { transform: [{ scale: lockScale }] }]}>
-              🔒
-            </Animated.Text>
-            <Text style={projStyles.lockTitle}>Milestone Projections Locked</Text>
-            <Text style={projStyles.lockSub}>
-              Watch a short ad to unlock over-by-over projected scores
-            </Text>
-            <TouchableOpacity
-              style={projStyles.watchAdBtn}
-              onPress={handleWatchAd}
-              activeOpacity={0.85}
-            >
-              <View style={projStyles.watchAdBtnInner}>
-                <Text style={projStyles.watchAdIcon}>▶️</Text>
-                <Text style={projStyles.watchAdText}>WATCH AD TO UNLOCK</Text>
-              </View>
-            </TouchableOpacity>
-            <Text style={projStyles.lockDisclaimer}>Free · Takes ~30 seconds</Text>
-          </View>
-        </View>
-      )}
-
-      {/* ── LOADING STATE (after ad watched, before unlock) ── */}
-      {isLoading && (
-        <View style={projStyles.loadingContainer}>
-          <ActivityIndicator size="large" color={colors.accent} />
-          <Text style={[projStyles.loadingText, { color: colors.accent }]}>
-            Unlocking projections...
-          </Text>
-        </View>
-      )}
-
-      {/* ── UNLOCKED STATE ── */}
-      {unlocked && (
-        <Animated.View style={{ opacity: revealAnim }}>
-          {(projection.type === 't20' || projection.type === 'odi' || projection.type === 't10') && (
-            <CheckpointGrid
-              checkpoints={projection.data as Checkpoint[]}
-              type={projection.type}
-              colors={colors}
-            />
-          )}
-          {projection.type === 'test' && (
-            <TestSessionView data={projection.data as TestInfo} />
-          )}
-          <View style={[projStyles.unlockedBadge, { backgroundColor: colors.accentLight, borderColor: colors.accentBorder }]}>
-            <Text style={[projStyles.unlockedBadgeText, { color: colors.accent }]}>✅ UNLOCKED</Text>
-          </View>
-        </Animated.View>
-      )}
-
-      <Text style={projStyles.disclaimer}>
-        * Projections are estimates based on current run rate & wickets fallen
-      </Text>
-    </Animated.View>
-  );
+  // Unused live-score UI remains commented out intentionally.
 }
 
 // ── Checkpoint Grid (T20 / ODI / T10) ────────────────────────────────────────
@@ -853,54 +689,11 @@ export default function MatchScreen() {
   }, [route.params.match]);
 
   useEffect(() => {
+    // Live score polling is disabled in this branch.
+    // The screen renders the match payload passed from the previous screen only.
     if (!matchId) {
       return;
     }
-
-    let cancelled = false;
-
-    const refreshFromApi = async () => {
-      console.log('[Polling][Match] API refetch started', new Date().toISOString(), '| matchId:', matchId);
-      try {
-        const [fresh] = await fetchLiveStatuses([{ id: matchId } as Match]);
-        if (!fresh || cancelled) {
-          console.log('[Polling][Match] API refetch finished (no update)', new Date().toISOString(), '| matchId:', matchId);
-          return;
-        }
-
-        setMatch(prev => ({
-          ...prev,
-          ...fresh,
-          status: fresh.status ?? prev.status,
-          score: fresh.score ?? prev.score,
-          matchEnded: fresh.matchEnded ?? prev.matchEnded,
-          matchStarted: fresh.matchStarted ?? prev.matchStarted,
-        }));
-        console.log(
-          '[Polling][Match] API refetch finished (updated)',
-          new Date().toISOString(),
-          '| matchId:',
-          matchId,
-          '| status:',
-          fresh.status,
-          '| score:',
-          fresh.score,
-        );
-      } catch {
-        console.log('[Polling][Match] API refetch failed', new Date().toISOString(), '| matchId:', matchId);
-        // keep existing match data on transient API failures
-      }
-    };
-
-    console.log('[Polling][Match] Started 30s interval', new Date().toISOString(), '| matchId:', matchId);
-    refreshFromApi();
-    const interval = setInterval(refreshFromApi, THIRTY_SECONDS_IN_MS);
-
-    return () => {
-      cancelled = true;
-      clearInterval(interval);
-      console.log('[Polling][Match] Cleared 30s interval', new Date().toISOString(), '| matchId:', matchId);
-    };
   }, [matchId]);
 
   /*
@@ -988,8 +781,7 @@ export default function MatchScreen() {
   const loadPrediction = useCallback(async () => {
     try {
       setError(null);
-      const [matchUpdated] = await fetchLiveStatuses([match]);
-      const result = await fetchPrediction(matchUpdated || match);
+      const result = await fetchPrediction(match);
       setPrediction(result);
       setPredictionLocked(false); // ← unlock only when data is ready
       animatePredCard();
@@ -1080,12 +872,6 @@ export default function MatchScreen() {
               <View style={styles.matchBadge}>
                 <Text style={styles.matchBadgeText}>🏏 MATCH DETAILS</Text>
               </View>
-              {match.status?.toLowerCase().includes('live') && (
-                <View style={styles.liveBadge}>
-                  <PulsingDot />
-                  <Text style={styles.liveBadgeText}>LIVE</Text>
-                </View>
-              )}
             </View>
 
             <View style={styles.teamsRow}>
@@ -1119,7 +905,6 @@ export default function MatchScreen() {
               <VenueRow venue={match.venue || '—'} delay={300} />
               <CountdownRow rawDate={match.date || ''} delay={360} />
               {match.matchType && <FormatRow format={match.matchType} delay={420} />}
-              {match.status && <StatusRow status={match.status} delay={480} />}
             </View>
           </View>
 
@@ -1241,7 +1026,7 @@ export default function MatchScreen() {
             </TouchableOpacity>
           )}
 
-          <ProjectedScoreCard match={match} addRef={rewardRef} />
+          {/* Live score projections disabled intentionally. */}
 
           <View style={styles.bottomSpacer} />
         </ScrollView>

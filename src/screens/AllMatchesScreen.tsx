@@ -17,7 +17,6 @@ import { RootStackParamList } from '../../App';
 import EndedCard from '../components/EndedCard';
 import LiveCard from '../components/LiveCard';
 import UpcomingCard from '../components/UpcomingCard';
-import { THIRTY_SECONDS_IN_MS } from '../constants/Keys';
 import { ALL_MATCHES_QUERY_KEY } from '../constants/QueryKeys';
 import { isLiveMatch, isMatchInRecentDays } from '../helpers/MatchDate';
 import { splitMatches } from '../helpers/SplitMatches';
@@ -216,7 +215,7 @@ export default function AllMatchesScreen() {
     queryFn: fetchMatches,
     refetchOnWindowFocus: false,
     staleTime: 0,
-    refetchInterval: THIRTY_SECONDS_IN_MS,
+    refetchInterval: 30 * 1000,
   });
   const wasRefetchingAllMatches = useRef(false);
 
@@ -228,13 +227,12 @@ export default function AllMatchesScreen() {
     }
 
     if (wasRefetchingAllMatches.current) {
-      const liveScoreSnapshot = matches
+      const liveMatchSnapshot = matches
         .filter(isLiveMatch)
         .map(m => ({
           id: m.id,
           teams: m.teams,
-          status: m.status,
-          score: m.score,
+          matchEnded: m.matchEnded,
         }));
 
       console.log(
@@ -242,8 +240,8 @@ export default function AllMatchesScreen() {
         new Date().toISOString(),
         '| matches:',
         matches.length,
-        '| live scores:',
-        liveScoreSnapshot,
+        '| live matches:',
+        liveMatchSnapshot,
       );
       wasRefetchingAllMatches.current = false;
     }
@@ -463,7 +461,6 @@ Pina Allignemt baledhu bro screen size match kaledhu aa live, upcoming section  
                     <LiveCard
                       match={match}
                       onPress={() => handleMatchPress(match)}
-                      isRefetching={isRefetching}
                     />
                   </View>
                 );
@@ -508,7 +505,6 @@ Pina Allignemt baledhu bro screen size match kaledhu aa live, upcoming section  
                     <LiveCard
                       match={match}
                       onPress={() => handleMatchPress(match)}
-                      isRefetching={isRefetching}
                     />
                   </View>
                 );

@@ -11,7 +11,6 @@ import { saveMatchesToStorage } from '../helpers/SaveMatchesToStorage';
 import { Match } from '../types';
 import { getMatchesFromStorage } from '../helpers/GetMatchesFromStorage';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { fetchLiveStatuses } from './LiveStatus';
 
 export type PollingSource =
   | 'API_FRESH'
@@ -220,50 +219,13 @@ export const fetchMatches = async (): Promise<Match[]> => {
   try {
     const cachedMatches = await getMatchesFromStorage();
     let workingMatches = cachedMatches;
-
-    // 30s cadence: refresh each live match using match_info endpoint.
-    const liveMatches = workingMatches.filter(match => match.matchStarted && !match.matchEnded);
-    if (liveMatches.length > 0) {
-      const liveUpdates = await fetchLiveStatuses(liveMatches);
-      const updatesById = new Map(liveUpdates.map(match => [match.id, match]));
-
-      workingMatches = workingMatches.map(match => {
-        const liveUpdate = updatesById.get(match.id);
-        if (!liveUpdate) {
-          return match;
-        }
-
-        return {
-          ...match,
-          ...liveUpdate,
-          status: liveUpdate.status ?? match.status,
-          score: liveUpdate.score ?? match.score,
-          matchEnded: liveUpdate.matchEnded ?? match.matchEnded,
-          matchStarted: liveUpdate.matchStarted ?? match.matchStarted,
-        };
-      });
-
-      await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(workingMatches));
-      setLastPollingSource('CACHE_BASE_LIVE_API_30S');
-      console.log(
-        '[Polling][Source] CACHE_BASE_LIVE_API_30S',
-        new Date().toISOString(),
-        '| cached:',
-        cachedMatches.length,
-        '| live checked:',
-        liveMatches.length,
-        '| live updated:',
-        liveUpdates.length,
-      );
-    } else {
-      setLastPollingSource('CACHE_HOURLY_WINDOW_NO_LIVE');
-      console.log(
-        '[Polling][Source] CACHE_HOURLY_WINDOW_NO_LIVE',
-        new Date().toISOString(),
-        '| cached:',
-        cachedMatches.length,
-      );
-    }
+    setLastPollingSource('CACHE_HOURLY_WINDOW_NO_LIVE');
+    console.log(
+      '[Polling][Source] CACHE_HOURLY_WINDOW_NO_LIVE',
+      new Date().toISOString(),
+      '| cached:',
+      cachedMatches.length,
+    );
 
     const shouldDoFullFetch = await shouldRunCadence(LAST_FETCH_TIME_KEY, ONE_HOUR_IN_MS);
     const shouldDoCurrentFetch = await shouldRunCadence(

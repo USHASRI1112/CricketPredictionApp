@@ -21,12 +21,10 @@ import { RootStackParamList } from '../../App';
 import LinearGradient from 'react-native-linear-gradient';
 import { useQuery } from '@tanstack/react-query';
 import { ALL_MATCHES_QUERY_KEY } from '../constants/QueryKeys';
-import { THIRTY_SECONDS_IN_MS } from '../constants/Keys';
 import { fetchMatches } from '../services/Matches';
 import { isLiveMatch, isMatchInRecentDays, isMatchOnCurrentDate } from '../helpers/MatchDate';
 import { Match } from '../types';
 import Add, { AppOpenAdManager } from './Add';
-import { getTeamMappedInnings } from '../helpers/ScoreMapping';
 
 type HomeScreenNavigationProp = NativeStackNavigationProp<RootStackParamList, 'Home'>;
 
@@ -872,7 +870,6 @@ function PredictionBanner({ match, index, onPress }: { match: Match; index: numb
   const type            = getPredictionType(match);
   const team1           = match.teams?.[0] || '—';
   const team2           = match.teams?.[1] || '—';
-  const isLive          = !match.matchEnded && match.status?.toLowerCase().includes('live');
 
   // Banner accent varies by type
   const accentColor = type === 'ipl' ? C.orange : C.cyan;
@@ -881,7 +878,7 @@ function PredictionBanner({ match, index, onPress }: { match: Match; index: numb
   //   : type === 'india'
   //   ? '🇮🇳 INDIA MATCH'
   //   : '📍 INDIA VENUE';
-  const typeLabel = isLiveMatch(match) && isMatchOnCurrentDate(match) ? 'LIVE MATCH' : 'MATCH';
+  const typeLabel = isLiveMatch(match) && isMatchOnCurrentDate(match) ? 'MATCH TODAY' : 'MATCH';
 
   // ensure mutable array for gradient
   const barColor1: string[] = type === 'ipl'
@@ -913,12 +910,6 @@ function PredictionBanner({ match, index, onPress }: { match: Match; index: numb
           <Text style={[styles.predBannerLabel, { color: accentColor }]}>
             {typeLabel}
           </Text>
-          {isLive && (
-            <View style={styles.predLivePill}>
-              <AnimatedDot delay={0} />
-              <Text style={styles.predLiveText}>LIVE</Text>
-            </View>
-          )}
         </View>
 
         {/* Match name */}
@@ -1072,7 +1063,7 @@ export default function HomeScreen() {
     queryFn: fetchMatches,
     refetchOnWindowFocus: false,
     staleTime: 0,
-    refetchInterval: THIRTY_SECONDS_IN_MS,
+    refetchInterval: 30 * 1000,
   });
   const wasRefetchingHome = useRef(false);
 
@@ -1084,13 +1075,12 @@ export default function HomeScreen() {
     }
 
     if (wasRefetchingHome.current) {
-      const liveScoreSnapshot = allMatches
+      const liveMatchSnapshot = allMatches
         .filter(isLiveMatch)
         .map(m => ({
           id: m.id,
           teams: m.teams,
-          status: m.status,
-          score: m.score,
+          matchEnded: m.matchEnded,
         }));
 
       console.log(
@@ -1098,8 +1088,8 @@ export default function HomeScreen() {
         new Date().toISOString(),
         '| matches:',
         allMatches.length,
-        '| live scores:',
-        liveScoreSnapshot,
+        '| live matches:',
+        liveMatchSnapshot,
       );
       wasRefetchingHome.current = false;
     }
@@ -1273,36 +1263,32 @@ export default function HomeScreen() {
               </View>
               <View style={styles.matchList}>
                 {liveMatches.map((m, i) => {
-                  const { team1Inning, team2Inning } = getTeamMappedInnings(m);
-
                   return (
                     <TouchableOpacity
                       key={m.id || i}
                       activeOpacity={0.9}
                       onPress={() => navigation.navigate('AllMatches', { focusFilter: 'live', focusMatchId: m.id })}
                     >
-                      <View style={styles.matchRow}>
-                        <LinearGradient colors={[C.surface, '#081220']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={StyleSheet.absoluteFill} />
-                        <View style={styles.liveBadge}>
-                          <AnimatedDot delay={0} />
-                          <Text style={styles.liveText}>LIVE</Text>
+                        <View style={styles.matchRow}>
+                          <LinearGradient colors={[C.surface, '#081220']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={StyleSheet.absoluteFill} />
+                          <View style={styles.liveBadge}>
+                            <AnimatedDot delay={0} />
+                            <Text style={styles.liveText}>LIVE</Text>
+                          </View>
+                          <View style={styles.matchTeamBlock}>
+                            <Text style={styles.matchTeam}>{m.teams?.[0] || '—'}</Text>
+                          </View>
+                          <View style={styles.matchVsBlock}>
+                            <Text style={styles.matchVs}>VS</Text>
+                            <Text style={styles.matchOvers}>{m.matchType?.toUpperCase() || ''}</Text>
+                          </View>
+                          <View style={[styles.matchTeamBlock, { alignItems: 'flex-end' }]}>
+                            <Text style={styles.matchTeam}>{m.teams?.[1] || '—'}</Text>
+                          </View>
+                          <Text style={styles.matchArrow}>›</Text>
                         </View>
-                        <View style={styles.matchTeamBlock}>
-                          <Text style={styles.matchTeam}>{m.teams?.[0] || '—'}</Text>
-                          <Text style={styles.matchScore}>{team1Inning?.runs || '—'}</Text>
-                        </View>
-                        <View style={styles.matchVsBlock}>
-                          <Text style={styles.matchVs}>VS</Text>
-                          <Text style={styles.matchOvers}>{team1Inning?.overs ? `${team1Inning.overs} ov` : ''}</Text>
-                        </View>
-                        <View style={[styles.matchTeamBlock, { alignItems: 'flex-end' }]}>
-                          <Text style={styles.matchTeam}>{m.teams?.[1] || '—'}</Text>
-                          <Text style={styles.matchScore}>{team2Inning?.runs || '—'}</Text>
-                        </View>
-                        <Text style={styles.matchArrow}>›</Text>
-                      </View>
-                    </TouchableOpacity>
-                  );
+                      </TouchableOpacity>
+                    );
                 })}
               </View>
             </View>
