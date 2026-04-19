@@ -19,7 +19,7 @@ import { fetchPrediction, PredictionResponse } from '../services/Prediction';
 import { fetchLiveStatuses } from '../services/LiveStatus';
 import { resolveMatchTeamFlags } from '../services/Flags';
 import { getProjectedScore } from '../helpers/ProjectedScore';
-import { THIRTY_SECONDS_IN_MS } from '../constants/Keys';
+import { MATCH_LIVE_REFRESH_MS } from '../constants/Keys';
 import { Checkpoint, TestInfo, Match } from '../types';
 import Add, { RewardAdd_ } from './Add';
 
@@ -158,13 +158,30 @@ function ProjectedScoreCard({ match, addRef }: { match: Match, addRef: React.Ref
   const isLive = match.status?.toLowerCase().includes('live') || match.matchStarted;
   if (!isLive || !match.score || match.score.length === 0 || !match.matchType) return null;
 
-  const currentInning = match.score[match.score.length - 1];
+  const liveDisplay = match.liveDisplay;
+  const currentInning = liveDisplay?.runs != null
+    ? {
+        r: liveDisplay.runs,
+        w: liveDisplay.wickets ?? 0,
+        o: liveDisplay.overs ?? 0,
+      }
+    : match.score[match.score.length - 1];
   if (!currentInning) return null;
+
+  console.log('[MatchScreen] render live state', {
+    matchId: match.id,
+    battingTeam: liveDisplay?.battingTeam,
+    runs: currentInning.r,
+    wickets: currentInning.w,
+    overs: currentInning.o,
+    confidence: liveDisplay?.confidence,
+    source: liveDisplay ? 'groq_or_normalized' : 'raw_api',
+  });
 
   const projection = getProjectedScore(currentInning, match.matchType);
   if (!projection) return null;
 
-  const inningLabel = 'Current Innings';
+  const inningLabel = liveDisplay?.battingTeam || liveDisplay?.inningLabel || 'Current Innings';
   const shortInning = inningLabel.length > 30 ? inningLabel.slice(0, 28) + '…' : inningLabel;
 
   // Get dynamic colors based on match type
@@ -894,7 +911,7 @@ export default function MatchScreen() {
 
     console.log('[Polling][Match] Started 30s interval', new Date().toISOString(), '| matchId:', matchId);
     refreshFromApi();
-    const interval = setInterval(refreshFromApi, THIRTY_SECONDS_IN_MS);
+    const interval = setInterval(refreshFromApi, MATCH_LIVE_REFRESH_MS);
 
     return () => {
       cancelled = true;

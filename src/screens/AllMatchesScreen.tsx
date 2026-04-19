@@ -17,7 +17,7 @@ import { RootStackParamList } from '../../App';
 import EndedCard from '../components/EndedCard';
 import LiveCard from '../components/LiveCard';
 import UpcomingCard from '../components/UpcomingCard';
-import { THIRTY_SECONDS_IN_MS } from '../constants/Keys';
+import { LIST_LIVE_REFRESH_MS } from '../constants/Keys';
 import { ALL_MATCHES_QUERY_KEY } from '../constants/QueryKeys';
 import { isLiveMatch, isMatchInRecentDays } from '../helpers/MatchDate';
 import { splitMatches } from '../helpers/SplitMatches';
@@ -216,7 +216,7 @@ export default function AllMatchesScreen() {
     queryFn: fetchMatches,
     refetchOnWindowFocus: false,
     staleTime: 0,
-    refetchInterval: THIRTY_SECONDS_IN_MS,
+    refetchInterval: LIST_LIVE_REFRESH_MS,
   });
   const wasRefetchingAllMatches = useRef(false);
 

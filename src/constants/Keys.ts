@@ -5,3 +5,5 @@ export const ONE_HOUR_IN_MS = 60 * 60 * 1000;
 export const FIFTEEN_MINUTES_IN_MS = 15 * 60 * 1000;
 export const ONE_MINUTE_IN_MS = 60 * 1000;
 export const THIRTY_SECONDS_IN_MS = 30 * 1000;
+export const LIST_LIVE_REFRESH_MS = 8 * 1000;
+export const MATCH_LIVE_REFRESH_MS = 8 * 1000;

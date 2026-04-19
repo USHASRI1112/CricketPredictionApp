@@ -15,12 +15,16 @@ export interface Match {
   teamInfo?: TeamInfo[];
   series_id: string;
   series?: string; // optional series name (added to match HomeScreen usage)
+  tossWinner?: string;
+  tossChoice?: string;
   fantasyEnabled?: boolean;
   bbbEnabled?: boolean;
   hasSquad?: boolean;
   matchStarted?: boolean;
   matchEnded?: boolean;
   score?: InningScore[];
+  liveDisplay?: LiveDisplay;
+  scorecard?: any[];
 }
 
 export interface TeamInfo {
@@ -34,6 +38,16 @@ export interface InningScore {
   r: number;
   w: number;
   o: number;
+}
+
+export interface LiveDisplay {
+  battingTeam: string | null;
+  runs: number | null;
+  wickets: number | null;
+  overs: number | null;
+  inningLabel: string | null;
+  status: string | null;
+  confidence: 'high' | 'medium' | 'low';
 }
 
 export type MatchType = 't20' | 'odi' | 'test' | 't10' | 'other' | string;
@@ -84,5 +98,3 @@ export interface TestInfo {
   runsToTea:       number; // projected runs to tea  (~60 ov)
   runsToStumps:    number; // projected runs to stumps (~90 ov)
 }
-
-

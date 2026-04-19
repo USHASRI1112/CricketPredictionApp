@@ -52,23 +52,54 @@ const LiveCard: React.FC<LiveCardProps> = ({
     name.split(' ').map(s => s[0]).slice(0, 2).join('').toUpperCase();
 
   const { team1Flag, team2Flag } = resolveMatchTeamFlags(match);
+  const liveDisplay = match.liveDisplay;
+  const normalizeTeam = (value = '') => value.toLowerCase().replace(/[^a-z0-9]+/g, '');
+  const team1Key = normalizeTeam(match.teams?.[0] || '');
+  const team2Key = normalizeTeam(match.teams?.[1] || '');
+  const battingKey = normalizeTeam(liveDisplay?.battingTeam || '');
+  const team1IsBatting = Boolean(battingKey && battingKey === team1Key);
+  const team2IsBatting = Boolean(battingKey && battingKey === team2Key);
 
   const { team1Inning, team2Inning } = getTeamMappedInnings(match);
   const rawScore1 = match.score?.[0];
   const rawScore2 = match.score?.[1];
 
   const inning1 = {
-    label: team1Inning?.label || rawScore1?.inning || '',
-    runs: team1Inning?.runs || rawScore1?.r || '',
-    wickets: team1Inning?.wickets || rawScore1?.w || '',
-    overs: team1Inning?.overs || rawScore1?.o || '',
+    label: team1Inning?.label || (team1IsBatting ? liveDisplay?.inningLabel : rawScore1?.inning) || '',
+    runs: team1Inning?.runs ?? (team1IsBatting && liveDisplay?.runs != null
+      ? String(liveDisplay.runs)
+      : rawScore1?.r !== undefined
+        ? String(rawScore1.r)
+        : ''),
+    wickets: team1Inning?.wickets ?? (team1IsBatting && liveDisplay?.wickets != null
+      ? String(liveDisplay.wickets)
+      : rawScore1?.w !== undefined
+        ? String(rawScore1.w)
+        : ''),
+    overs: team1Inning?.overs ?? (team1IsBatting && liveDisplay?.overs != null
+      ? String(liveDisplay.overs)
+      : rawScore1?.o !== undefined
+        ? String(rawScore1.o)
+        : ''),
   };
 
   const inning2 = {
-    label: team2Inning?.label || rawScore2?.inning || '',
-    runs: team2Inning?.runs || rawScore2?.r || '',
-    wickets: team2Inning?.wickets || rawScore2?.w || '',
-    overs: team2Inning?.overs || rawScore2?.o || '',
+    label: team2Inning?.label || (team2IsBatting ? liveDisplay?.inningLabel : rawScore2?.inning) || '',
+    runs: team2Inning?.runs ?? (team2IsBatting && liveDisplay?.runs != null
+      ? String(liveDisplay.runs)
+      : rawScore2?.r !== undefined
+        ? String(rawScore2.r)
+        : ''),
+    wickets: team2Inning?.wickets ?? (team2IsBatting && liveDisplay?.wickets != null
+      ? String(liveDisplay.wickets)
+      : rawScore2?.w !== undefined
+        ? String(rawScore2.w)
+        : ''),
+    overs: team2Inning?.overs ?? (team2IsBatting && liveDisplay?.overs != null
+      ? String(liveDisplay.overs)
+      : rawScore2?.o !== undefined
+        ? String(rawScore2.o)
+        : ''),
   };
 
   // ── Format local time from ISO dateTimeGMT ──────────────────────────

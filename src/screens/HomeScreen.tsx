@@ -21,7 +21,7 @@ import { RootStackParamList } from '../../App';
 import LinearGradient from 'react-native-linear-gradient';
 import { useQuery } from '@tanstack/react-query';
 import { ALL_MATCHES_QUERY_KEY } from '../constants/QueryKeys';
-import { THIRTY_SECONDS_IN_MS } from '../constants/Keys';
+import { LIST_LIVE_REFRESH_MS } from '../constants/Keys';
 import { fetchMatches } from '../services/Matches';
 import { isLiveMatch, isMatchInRecentDays, isMatchOnCurrentDate } from '../helpers/MatchDate';
 import { Match } from '../types';
@@ -1072,7 +1072,7 @@ export default function HomeScreen() {
     queryFn: fetchMatches,
     refetchOnWindowFocus: false,
     staleTime: 0,
-    refetchInterval: THIRTY_SECONDS_IN_MS,
+    refetchInterval: LIST_LIVE_REFRESH_MS,
   });
   const wasRefetchingHome = useRef(false);
 
@@ -1274,6 +1274,15 @@ export default function HomeScreen() {
               <View style={styles.matchList}>
                 {liveMatches.map((m, i) => {
                   const { team1Inning, team2Inning } = getTeamMappedInnings(m);
+                  const liveDisplay = m.liveDisplay;
+                  const normalizeTeam = (value = '') => value.toLowerCase().replace(/[^a-z0-9]+/g, '');
+                  const battingKey = normalizeTeam(liveDisplay?.battingTeam || '');
+                  const team1Key = normalizeTeam(m.teams?.[0] || '');
+                  const team2Key = normalizeTeam(m.teams?.[1] || '');
+                  const team1Score = battingKey && battingKey === team1Key ? liveDisplay?.runs : team1Inning?.runs;
+                  const team2Score = battingKey && battingKey === team2Key ? liveDisplay?.runs : team2Inning?.runs;
+                  const team1Overs = battingKey && battingKey === team1Key ? liveDisplay?.overs : team1Inning?.overs;
+                  const team2Overs = battingKey && battingKey === team2Key ? liveDisplay?.overs : team2Inning?.overs;
 
                   return (
                     <TouchableOpacity
@@ -1289,15 +1298,15 @@ export default function HomeScreen() {
                         </View>
                         <View style={styles.matchTeamBlock}>
                           <Text style={styles.matchTeam}>{m.teams?.[0] || '—'}</Text>
-                          <Text style={styles.matchScore}>{team1Inning?.runs || '—'}</Text>
+                          <Text style={styles.matchScore}>{team1Score || '—'}</Text>
                         </View>
                         <View style={styles.matchVsBlock}>
                           <Text style={styles.matchVs}>VS</Text>
-                          <Text style={styles.matchOvers}>{team1Inning?.overs ? `${team1Inning.overs} ov` : ''}</Text>
+                          <Text style={styles.matchOvers}>{team1Overs ? `${team1Overs} ov` : ''}</Text>
                         </View>
                         <View style={[styles.matchTeamBlock, { alignItems: 'flex-end' }]}>
                           <Text style={styles.matchTeam}>{m.teams?.[1] || '—'}</Text>
-                          <Text style={styles.matchScore}>{team2Inning?.runs || '—'}</Text>
+                          <Text style={styles.matchScore}>{team2Score || '—'}</Text>
                         </View>
                         <Text style={styles.matchArrow}>›</Text>
                       </View>

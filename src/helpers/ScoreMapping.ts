@@ -26,6 +26,39 @@ const getTeamTokens = (teamName?: string): string[] => {
   return Array.from(new Set([normalized, ...words, shortCode])).filter(Boolean);
 };
 
+const scoreTeamAgainstLabel = (teamName: string | undefined, inningLabel: string): number => {
+  const normalizedLabel = normalize(inningLabel);
+  const normalizedTeam = normalize(teamName);
+
+  if (!normalizedTeam || !normalizedLabel) {
+    return -1;
+  }
+
+  if (normalizedLabel === normalizedTeam) {
+    return 100;
+  }
+
+  let score = 0;
+  const tokens = getTeamTokens(teamName);
+
+  tokens.forEach(token => {
+    if (!token) {
+      return;
+    }
+
+    if (normalizedLabel === token) {
+      score += 30;
+      return;
+    }
+
+    if (normalizedLabel.includes(token)) {
+      score += token === normalizedTeam ? 20 : 8;
+    }
+  });
+
+  return score > 0 ? score : -1;
+};
+
 const parseInning = (inning: any): TeamMappedInning => ({
   label: inning?.inning || inning?.title || '',
   runs: String(inning?.r ?? inning?.runs ?? ''),
@@ -33,50 +66,90 @@ const parseInning = (inning: any): TeamMappedInning => ({
   overs: String(inning?.o ?? inning?.overs ?? ''),
 });
 
-const findInningForTeam = (
-  teamName: string | undefined,
-  innings: any[],
-  usedIndexes: Set<number>,
-): TeamMappedInning | null => {
-  const tokens = getTeamTokens(teamName);
+const findTeamIndexByName = (teams: string[], target?: string): number => {
+  const normalizedTarget = normalize(target);
+  if (!normalizedTarget) {
+    return -1;
+  }
 
-  for (let i = 0; i < innings.length; i += 1) {
-    if (usedIndexes.has(i)) {
-      continue;
+  return teams.findIndex(team => {
+    const normalizedTeam = normalize(team);
+    return (
+      normalizedTeam === normalizedTarget ||
+      normalizedTeam.includes(normalizedTarget) ||
+      normalizedTarget.includes(normalizedTeam)
+    );
+  });
+};
+
+const inferBattingTeamIndex = (
+  match: Match,
+  inningLabel: string,
+  inningIndex: number,
+  usedTeamIndexes: Set<number>,
+): number | null => {
+  const teams = match.teams || [];
+  const scoredTeams = teams
+    .map((team, index) => ({ index, score: scoreTeamAgainstLabel(team, inningLabel) }))
+    .sort((a, b) => b.score - a.score);
+
+  const best = scoredTeams[0];
+  const second = scoredTeams[1];
+
+  if (best && best.score >= 0 && (!second || best.score - second.score >= 15)) {
+    return best.index;
+  }
+
+  const tossWinnerIndex = findTeamIndexByName(teams, match.tossWinner);
+  if (inningIndex === 0 && tossWinnerIndex >= 0) {
+    const choice = normalize(match.tossChoice);
+    if (choice.includes('bowl')) {
+      const otherIndex = teams.findIndex((_, index) => index !== tossWinnerIndex && !usedTeamIndexes.has(index));
+      if (otherIndex >= 0) {
+        return otherIndex;
+      }
     }
 
-    const inningLabel = normalize(innings[i]?.inning || innings[i]?.title || '');
-    if (!inningLabel) {
-      continue;
-    }
-
-    if (tokens.some(token => token && inningLabel.includes(token))) {
-      usedIndexes.add(i);
-      return parseInning(innings[i]);
+    if (choice.includes('bat')) {
+      return tossWinnerIndex;
     }
   }
 
-  for (let i = 0; i < innings.length; i += 1) {
-    if (!usedIndexes.has(i)) {
-      usedIndexes.add(i);
-      return parseInning(innings[i]);
-    }
-  }
-
-  return null;
+  const firstUnused = teams.findIndex((_, index) => !usedTeamIndexes.has(index));
+  return firstUnused >= 0 ? firstUnused : null;
 };
 
 export const getTeamMappedInnings = (
   match: Match,
 ): { team1Inning: TeamMappedInning | null; team2Inning: TeamMappedInning | null } => {
-  const innings = Array.isArray(match.score) ? match.score : [];
+  const innings = Array.isArray(match.score) ? (match.score as any[]) : [];
   if (innings.length === 0) {
     return { team1Inning: null, team2Inning: null };
   }
 
-  const usedIndexes = new Set<number>();
-  const team1Inning = findInningForTeam(match.teams?.[0], innings, usedIndexes);
-  const team2Inning = findInningForTeam(match.teams?.[1], innings, usedIndexes);
+  const teams = match.teams || [];
+  const usedTeamIndexes = new Set<number>();
+  const mapped: Array<TeamMappedInning | null> = Array.from({ length: teams.length }, () => null);
 
-  return { team1Inning, team2Inning };
+  innings.forEach((inning, inningIndex) => {
+    const inningLabel = inning?.inning || inning?.title || '';
+    const teamIndex = inferBattingTeamIndex(match, inningLabel, inningIndex, usedTeamIndexes);
+
+    if (teamIndex === null || teamIndex < 0 || teamIndex >= teams.length) {
+      return;
+    }
+
+    const targetIndex = mapped[teamIndex] ? mapped.findIndex(item => item === null) : teamIndex;
+    if (targetIndex < 0) {
+      return;
+    }
+
+    mapped[targetIndex] = parseInning(inning);
+    usedTeamIndexes.add(teamIndex);
+  });
+
+  return {
+    team1Inning: mapped[0] || null,
+    team2Inning: mapped[1] || null,
+  };
 };

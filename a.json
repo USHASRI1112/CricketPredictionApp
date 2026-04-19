@@ -1,0 +1,416 @@
+{
+  "apikey": "5de3a03b-2e22-442c-85cc-d03e80e45715",
+  "data": {
+    "id": "549ba395-31e9-477b-ba2c-a2a0dd1cbec9",
+    "name": "Royal Challengers Bengaluru vs Delhi Capitals, 26th Match, Indian Premier League 2026",
+    "matchType": "t20",
+    "status": "Innings Break",
+    "venue": "M.Chinnaswamy Stadium, Bengaluru",
+    "date": "2026-04-18",
+    "dateTimeGMT": "2026-04-18T10:00:00",
+    "teams": ["Royal Challengers Bengaluru", "Delhi Capitals"],
+    "teamInfo": [
+      {
+        "name": "Delhi Capitals",
+        "shortname": "DC",
+        "img": "https://g.cricapi.com/iapi/148-637874596301457910.png?w=48"
+      },
+      {
+        "name": "Royal Challengers Bengaluru",
+        "shortname": "RCBW",
+        "img": "https://g.cricapi.com/iapi/21439-638468478038395955.jpg?w=48"
+      }
+    ],
+    "score": [
+      {
+        "r": 175,
+        "w": 8,
+        "o": 20,
+        "inning": "Royal Challengers Bengaluru Inning 1"
+      }
+    ],
+    "tossWinner": "delhi capitals",
+    "tossChoice": "bowl",
+    "series_id": "87c62aac-bc3c-4738-ab93-19da0690488f",
+    "scorecard": [
+      {
+        "batting": [
+          {
+            "batsman": {
+              "id": "6db25d60-ff96-4d8d-8d22-dedeeb5ffa29",
+              "name": "Philip Salt",
+              "altnames": ["Phil Salt"]
+            },
+            "dismissal": "catch",
+            "bowler": {
+              "id": "1e651cfb-57f1-48da-bf9d-83cbff1733d1",
+              "name": "Kuldeep Yadav"
+            },
+            "catcher": {
+              "id": "de19a93e-06df-4597-9186-7a53c1613552",
+              "name": "Tristan Stubbs"
+            },
+            "dismissal-text": "c Tristan Stubbs b Kuldeep Yadav",
+            "r": 63,
+            "b": 38,
+            "4s": 4,
+            "6s": 3,
+            "sr": 165.79
+          },
+          {
+            "batsman": {
+              "id": "c61d247d-7f77-452c-b495-2813a9cd0ac4",
+              "name": "Virat Kohli"
+            },
+            "dismissal": "catch",
+            "bowler": {
+              "id": "a1782393-3479-4caa-9c27-79cb87df9abc",
+              "name": "Lungi Ngidi"
+            },
+            "catcher": {
+              "id": "bbbf3b4e-dbc3-4f2a-986d-1a0227ea5a06",
+              "name": "Pathum Nissanka",
+              "altnames": ["P Nissanka"]
+            },
+            "dismissal-text": "c Pathum Nissanka b Lungi Ngidi",
+            "r": 19,
+            "b": 13,
+            "4s": 3,
+            "6s": 0,
+            "sr": 146.15
+          },
+          {
+            "batsman": {
+              "id": "74c6584a-45a5-4781-a5e7-c0c9340da954",
+              "name": "Devdutt Padikkal"
+            },
+            "dismissal": "catch",
+            "bowler": {
+              "id": "670ae8ac-4fe9-4f0c-84ee-320b13039f34",
+              "name": "Axar Patel"
+            },
+            "catcher": {
+              "id": "2f50df2f-809d-44f9-b5be-ccb846515861",
+              "name": "David Miller"
+            },
+            "dismissal-text": "c David Miller b Axar Patel",
+            "r": 18,
+            "b": 13,
+            "4s": 1,
+            "6s": 1,
+            "sr": 138.46
+          },
+          {
+            "batsman": {
+              "id": "88215ee9-ca67-48af-a3f0-6b38718bd830",
+              "name": "Rajat Patidar"
+            },
+            "dismissal": "catch",
+            "bowler": {
+              "id": "116e2bfb-6a97-4221-8006-8e7da70b0715",
+              "name": "Mukesh Kumar"
+            },
+            "catcher": {
+              "id": "a034346c-b408-4d29-a0f0-8b12430be28e",
+              "name": "KL Rahul"
+            },
+            "dismissal-text": "c KL Rahul b Mukesh Kumar",
+            "r": 8,
+            "b": 4,
+            "4s": 0,
+            "6s": 1,
+            "sr": 200
+          },
+          {
+            "batsman": {
+              "id": "69718248-2a3a-45d4-9a2a-6f4dfc6942a5",
+              "name": "Tim David"
+            },
+            "dismissal": "catch",
+            "bowler": {
+              "id": "670ae8ac-4fe9-4f0c-84ee-320b13039f34",
+              "name": "Axar Patel"
+            },
+            "catcher": {
+              "id": "d8826d0d-ef95-4dce-a47a-b09b97f49f07",
+              "name": "T Natarajan"
+            },
+            "dismissal-text": "c T Natarajan b Axar Patel",
+            "r": 26,
+            "b": 17,
+            "4s": 3,
+            "6s": 1,
+            "sr": 152.94
+          },
+          {
+            "batsman": {
+              "id": "e28de73b-f5df-49eb-bdf6-c50471319404",
+              "name": "Jitesh Sharma"
+            },
+            "dismissal": "catch",
+            "bowler": {
+              "id": "a1782393-3479-4caa-9c27-79cb87df9abc",
+              "name": "Lungi Ngidi"
+            },
+            "catcher": {
+              "id": "2f50df2f-809d-44f9-b5be-ccb846515861",
+              "name": "David Miller"
+            },
+            "dismissal-text": "c David Miller b Lungi Ngidi",
+            "r": 14,
+            "b": 20,
+            "4s": 1,
+            "6s": 0,
+            "sr": 70
+          },
+          {
+            "batsman": {
+              "id": "7fd4fa20-bc49-4337-ae8a-540b67cb011d",
+              "name": "Romario Shepherd",
+              "altnames": ["romario shepherd"]
+            },
+            "dismissal": "lbw",
+            "bowler": {
+              "id": "1e651cfb-57f1-48da-bf9d-83cbff1733d1",
+              "name": "Kuldeep Yadav"
+            },
+            "dismissal-text": "lbw b Kuldeep Yadav",
+            "r": 1,
+            "b": 4,
+            "4s": 0,
+            "6s": 0,
+            "sr": 25
+          },
+          {
+            "batsman": {
+              "id": "81c09c1b-1b1d-4e87-9eaa-d7d0a89a6159",
+              "name": "Krunal Pandya"
+            },
+            "dismissal": "runout",
+            "bowler": {
+              "id": "a034346c-b408-4d29-a0f0-8b12430be28e",
+              "name": "KL Rahul"
+            },
+            "catcher": {
+              "id": "a1782393-3479-4caa-9c27-79cb87df9abc",
+              "name": "Lungi Ngidi"
+            },
+            "dismissal-text": "run out (KL Rahul/Lungi Ngidi)",
+            "r": 12,
+            "b": 10,
+            "4s": 0,
+            "6s": 1,
+            "sr": 120
+          },
+          {
+            "batsman": {
+              "id": "a1f7a1f3-f19c-43d2-bcd7-b4bae22f5842",
+              "name": "Rasikh Salam Dar"
+            },
+            "dismissal-text": "not out",
+            "r": 0,
+            "b": 0,
+            "4s": 0,
+            "6s": 0,
+            "sr": 0
+          },
+          {
+            "batsman": {
+              "id": "3f3ecf51-8411-4046-9477-18c0fe3da6ac",
+              "name": "Bhuvneshwar Kumar"
+            },
+            "dismissal-text": "not out",
+            "r": 3,
+            "b": 2,
+            "4s": 0,
+            "6s": 0,
+            "sr": 150
+          }
+        ],
+        "bowling": [
+          {
+            "bowler": {
+              "id": "8fabee3c-244c-4ead-8f96-2ec79540d33f",
+              "name": "Auqib Nabi Dar"
+            },
+            "o": 3,
+            "m": 0,
+            "r": 36,
+            "w": 0,
+            "nb": 0,
+            "wd": 1,
+            "eco": 12
+          },
+          {
+            "bowler": {
+              "id": "116e2bfb-6a97-4221-8006-8e7da70b0715",
+              "name": "Mukesh Kumar"
+            },
+            "o": 4,
+            "m": 0,
+            "r": 32,
+            "w": 1,
+            "nb": 1,
+            "wd": 4,
+            "eco": 8
+          },
+          {
+            "bowler": {
+              "id": "a1782393-3479-4caa-9c27-79cb87df9abc",
+              "name": "Lungi Ngidi"
+            },
+            "o": 4,
+            "m": 0,
+            "r": 39,
+            "w": 2,
+            "nb": 0,
+            "wd": 1,
+            "eco": 9.8
+          },
+          {
+            "bowler": {
+              "id": "1e651cfb-57f1-48da-bf9d-83cbff1733d1",
+              "name": "Kuldeep Yadav"
+            },
+            "o": 4,
+            "m": 0,
+            "r": 32,
+            "w": 2,
+            "nb": 0,
+            "wd": 1,
+            "eco": 8
+          },
+          {
+            "bowler": {
+              "id": "d8826d0d-ef95-4dce-a47a-b09b97f49f07",
+              "name": "T Natarajan"
+            },
+            "o": 2,
+            "m": 0,
+            "r": 16,
+            "w": 0,
+            "nb": 0,
+            "wd": 1,
+            "eco": 8
+          },
+          {
+            "bowler": {
+              "id": "670ae8ac-4fe9-4f0c-84ee-320b13039f34",
+              "name": "Axar Patel"
+            },
+            "o": 3,
+            "m": 0,
+            "r": 18,
+            "w": 2,
+            "nb": 0,
+            "wd": 0,
+            "eco": 6
+          }
+        ],
+        "catching": [
+          {
+            "catcher": {
+              "id": "de19a93e-06df-4597-9186-7a53c1613552",
+              "name": "Tristan Stubbs"
+            },
+            "stumped": 0,
+            "runout": 0,
+            "catch": 1,
+            "cb": 0,
+            "lbw": 0,
+            "bowled": 0
+          },
+          {
+            "catcher": {
+              "id": "bbbf3b4e-dbc3-4f2a-986d-1a0227ea5a06",
+              "name": "Pathum Nissanka",
+              "altnames": ["P Nissanka"]
+            },
+            "stumped": 0,
+            "runout": 0,
+            "catch": 1,
+            "cb": 0,
+            "lbw": 0,
+            "bowled": 0
+          },
+          {
+            "catcher": {
+              "id": "2f50df2f-809d-44f9-b5be-ccb846515861",
+              "name": "David Miller"
+            },
+            "stumped": 0,
+            "runout": 0,
+            "catch": 2,
+            "cb": 0,
+            "lbw": 0,
+            "bowled": 0
+          },
+          {
+            "catcher": {
+              "id": "a034346c-b408-4d29-a0f0-8b12430be28e",
+              "name": "KL Rahul"
+            },
+            "stumped": 0,
+            "runout": 0,
+            "catch": 1,
+            "cb": 0,
+            "lbw": 0,
+            "bowled": 0
+          },
+          {
+            "catcher": {
+              "id": "d8826d0d-ef95-4dce-a47a-b09b97f49f07",
+              "name": "T Natarajan"
+            },
+            "stumped": 0,
+            "runout": 0,
+            "catch": 1,
+            "cb": 0,
+            "lbw": 0,
+            "bowled": 0
+          },
+          {
+            "catcher": {
+              "id": "a1782393-3479-4caa-9c27-79cb87df9abc",
+              "name": "Lungi Ngidi"
+            },
+            "stumped": 0,
+            "runout": 1,
+            "catch": 0,
+            "cb": 0,
+            "lbw": 0,
+            "bowled": 0
+          },
+          {
+            "stumped": 0,
+            "runout": 0,
+            "catch": 0,
+            "cb": 0,
+            "lbw": 1,
+            "bowled": 0,
+            "catcher": {
+              "id": "1e651cfb-57f1-48da-bf9d-83cbff1733d1",
+              "name": "Kuldeep Yadav"
+            }
+          }
+        ],
+        "extras": {},
+        "totals": {},
+        "inning": "Royal Challengers Bengaluru Inning 1"
+      }
+    ],
+    "matchStarted": true,
+    "matchEnded": false
+  },
+  "status": "success",
+  "info": {
+    "hitsToday": 27,
+    "hitsUsed": 1,
+    "hitsLimit": 100000,
+    "credits": 0,
+    "server": 9,
+    "queryTime": 29.2771,
+    "s": 0,
+    "cache": 0
+  }
+}
