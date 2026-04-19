@@ -1,5 +1,5 @@
-import { NavigationContainer, NavigationContainerRef } from '@react-navigation/native';
-import { createNativeStackNavigator } from '@react-navigation/native-stack';
+import { NavigationContainer, NavigationContainerRef, useNavigation } from '@react-navigation/native';
+import { createNativeStackNavigator, NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import React, { useEffect, useRef, useState } from 'react';
 import {
@@ -21,6 +21,7 @@ import AllMatchesScreen from './src/screens/AllMatchesScreen';
 import HomeScreen from './src/screens/HomeScreen';
 import MatchScreen from './src/screens/MatchScreen';
 import { fetchMatches } from './src/services/Matches';
+import SplashScreen from './src/screens/SplashScreen';
 import { Match } from './src/types';
 import {
   ensureAndroidNotificationPermission,
@@ -41,6 +42,7 @@ export type RootStackParamList = {
     focusMatchId?: string;
   } | undefined;
   Match: { matchId: string; match: Match };
+  Splash: undefined;
 };
 
 const Stack       = createNativeStackNavigator<RootStackParamList>();
@@ -134,6 +136,21 @@ function resolveToastType(title: string, data: Record<string, string>): ToastDat
   return 'default';
 }
 
+
+
+export function SplashWrapper() {
+  type RootNav = NativeStackNavigationProp<any>;
+  const navigation = useNavigation<RootNav>();
+ 
+  return (
+    <SplashScreen
+      onFinish={() =>
+        navigation.replace('Home') // replaces splash so back-button won't return to it
+      }
+    />
+  );
+}
+ 
 export default function App() {
   const isDarkMode    = useColorScheme() === 'dark';
   const navigationRef = useRef<NavigationContainerRef<RootStackParamList>>(null);
@@ -255,7 +272,7 @@ export default function App() {
       <QueryClientProvider client={queryClient}>
         <NavigationContainer ref={navigationRef}>
           <Stack.Navigator
-            initialRouteName="Home"
+            initialRouteName="Splash"
             screenOptions={{
               headerStyle:      { backgroundColor: '#03080F' },
               headerTintColor:  '#ffffff',
@@ -263,6 +280,7 @@ export default function App() {
               contentStyle:     { backgroundColor: '#03080F' },
             }}
           >
+            <Stack.Screen name="Splash"     component={SplashWrapper} />
             <Stack.Screen
               name="Home"
               component={HomeScreen}
