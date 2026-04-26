@@ -1,6 +1,14 @@
 import { Match } from '../types';
 import { getMatchDateKey, isLiveMatch, toLocalDateKey } from './MatchDate';
 
+const sortByTimestamp = (matches: Match[]): Match[] => {
+  return [...matches].sort((a, b) => {
+    const aTime = a.dateTimeGMT ? new Date(a.dateTimeGMT).getTime() : 0;
+    const bTime = b.dateTimeGMT ? new Date(b.dateTimeGMT).getTime() : 0;
+    return aTime - bTime;
+  });
+};
+
 export const splitMatches = (
   matches: Match[],
 ): { live: Match[]; today: Match[]; upcoming: Match[]; ended: Match[] } => {
@@ -38,5 +46,10 @@ export const splitMatches = (
     ended.push(match);
   });
 
-  return { live, today, upcoming, ended };
+  return {
+    live: sortByTimestamp(live),
+    today,
+    upcoming: sortByTimestamp(upcoming),
+    ended: sortByTimestamp(ended),
+  };
 };

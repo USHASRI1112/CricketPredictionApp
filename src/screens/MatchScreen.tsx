@@ -724,7 +724,23 @@ export default function MatchScreen() {
   const [particles, setParticles] = useState<ParticleData[]>([]);
   const particleIdRef = useRef(0);
   const addRef = useRef<{ showAd?: (cb?: () => void) => void } | null>(null);
-  const rewardRef = useRef<{ showAd?: (cb?: () => void) => void } | null>(null); // ← add
+  const rewardRef = useRef<{ showAd?: (cb?: () => void) => void; isLoaded?: () => boolean } | null>(null); // ← add
+    const runPredictionWithAdPriority = useCallback((run: () => void) => {
+      const rewardLoaded = rewardRef.current?.isLoaded?.() === true;
+
+      if (rewardLoaded && rewardRef.current?.showAd) {
+        rewardRef.current.showAd(run);
+        return;
+      }
+
+      if (addRef.current?.showAd) {
+        addRef.current.showAd(run);
+        return;
+      }
+
+      run();
+    }, []);
+
   const [predictionLocked, setPredictionLocked] = useState(true);
   const colors = getDynamicColors(match.matchType);
 
@@ -800,11 +816,7 @@ export default function MatchScreen() {
       setTimeout(() => loadPrediction(), 300);
     };
 
-    if (addRef.current?.showAd) {
-      addRef.current.showAd(run);
-    } else {
-      run();
-    }
+    runPredictionWithAdPriority(run);
   };
 
 
@@ -1011,11 +1023,7 @@ export default function MatchScreen() {
                   loadPrediction();
                 };
 
-                if (addRef.current?.showAd) {
-                  addRef.current.showAd(run);
-                } else {
-                  run();
-                }
+                runPredictionWithAdPriority(run);
               }} 
               activeOpacity={0.82}
             >

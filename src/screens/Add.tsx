@@ -13,15 +13,15 @@ import { InterstitialAd, AdEventType,BannerAd, BannerAdSize,NativeAd,
    } from 'react-native-google-mobile-ads';
 import {View,Text, StyleSheet} from 'react-native';
 // Google Test Ad Unit IDs - Replace with production IDs before release
-export const adUnitId = 'ca-app-pub-3940256099942544/1033173712'; // Interstitial
+export const adUnitId = 'ca-app-pub-1800123243044416/3183690432'; // Interstitial
 
 const bannerAdUnit = 'ca-app-pub-3940256099942544/6300978111'; // Banner
 
-const nativeAdUnit = 'ca-app-pub-3940256099942544/2247696110'; // Native
+const nativeAdUnit = 'ca-app-pub-1800123243044416/2509407596'; // Native
 
 const appOpenUnitId = 'ca-app-pub-3940256099942544/5575463023'; // App Open
 
-const rewardedAdUnit = 'ca-app-pub-3940256099942544/5224354917'; // Rewarded
+const rewardedAdUnit = 'ca-app-pub-1800123243044416/8847080652'; // Rewarded
 
 const appOpenAd = AppOpenAd.createForAdRequest(appOpenUnitId, {
   requestNonPersonalizedAdsOnly: true,
@@ -80,6 +80,20 @@ function RewardAdd(_: any, ref: any) {
   const rewardedRef = useRef<RewardedAd | null>(null);
   const loadedRef = useRef(false);
   const callbacksRef = useRef<Array<() => void>>([]);
+  const pendingShowRef = useRef(false);
+  const fallbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const clearFallbackTimer = () => {
+    if (fallbackTimerRef.current) {
+      clearTimeout(fallbackTimerRef.current);
+      fallbackTimerRef.current = null;
+    }
+  };
+
+  const drainCallbacks = () => {
+    const cbs = callbacksRef.current.splice(0);
+    cbs.forEach(fn => fn());
+  };
 
   if (!rewardedRef.current) {
     rewardedRef.current = RewardedAd.createForAdRequest(rewardedAdUnit, {
@@ -88,14 +102,37 @@ function RewardAdd(_: any, ref: any) {
   }
 
   useImperativeHandle(ref, () => ({
+    isLoaded() {
+      return loadedRef.current;
+    },
     showAd(cb?: () => void) {
       if (cb) callbacksRef.current.push(cb);
+
+      const ad = rewardedRef.current;
+      if (!ad) {
+        pendingShowRef.current = false;
+        clearFallbackTimer();
+        drainCallbacks();
+        return;
+      }
+
       if (loadedRef.current) {
-        rewardedRef.current?.show();
+        pendingShowRef.current = false;
+        clearFallbackTimer();
+        try {
+          ad.show();
+        } catch {
+          drainCallbacks();
+        }
       } else {
-        // not loaded — unlock anyway as fallback
-        const cbs = callbacksRef.current.splice(0);
-        cbs.forEach(fn => fn());
+        pendingShowRef.current = true;
+        ad.load();
+
+        clearFallbackTimer();
+        fallbackTimerRef.current = setTimeout(() => {
+          pendingShowRef.current = false;
+          drainCallbacks();
+        }, 2500);
       }
     },
   }));
@@ -107,6 +144,15 @@ function RewardAdd(_: any, ref: any) {
       RewardedAdEventType.LOADED,
       () => {
         loadedRef.current = true;
+        if (pendingShowRef.current && callbacksRef.current.length > 0) {
+          pendingShowRef.current = false;
+          clearFallbackTimer();
+          try {
+            ad.show();
+          } catch {
+            drainCallbacks();
+          }
+        }
         // console.log('✅ Rewarded Ad Loaded');
       },
     );
@@ -116,8 +162,7 @@ function RewardAdd(_: any, ref: any) {
       (reward) => {
         // console.log('🎁 Reward earned:', reward);
         // fire callbacks when reward is earned
-        const cbs = callbacksRef.current.splice(0);
-        cbs.forEach(fn => fn());
+        drainCallbacks();
       },
     );
 
@@ -125,6 +170,9 @@ function RewardAdd(_: any, ref: any) {
       AdEventType.CLOSED,
       () => {
         loadedRef.current = false;
+        pendingShowRef.current = false;
+        clearFallbackTimer();
+        drainCallbacks();
         // console.log('Rewarded Ad Closed');
         ad.load(); // preload next
       },
@@ -133,16 +181,20 @@ function RewardAdd(_: any, ref: any) {
     const unsubscribeError = ad.addAdEventListener(
       AdEventType.ERROR,
       (error) => {
+        loadedRef.current = false;
+        pendingShowRef.current = false;
+        clearFallbackTimer();
         // console.log('❌ Rewarded Ad Error:', error);
         // fire callbacks on error so user isn't stuck
-        const cbs = callbacksRef.current.splice(0);
-        cbs.forEach(fn => fn());
+        drainCallbacks();
+        ad.load();
       },
     );
 
     ad.load();
 
     return () => {
+      clearFallbackTimer();
       unsubscribeLoaded();
       unsubscribeEarned();
       unsubscribeClosed();
@@ -214,6 +266,20 @@ function Add(_: any, ref: any) {
   const interstitialRef = useRef<InterstitialAd | null>(null);
   const loadedRef = useRef(false);
   const callbacksRef = useRef<Array<() => void>>([]);
+  const pendingShowRef = useRef(false);
+  const fallbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const clearFallbackTimer = () => {
+    if (fallbackTimerRef.current) {
+      clearTimeout(fallbackTimerRef.current);
+      fallbackTimerRef.current = null;
+    }
+  };
+
+  const drainCallbacks = () => {
+    const cbs = callbacksRef.current.splice(0);
+    cbs.forEach(fn => fn());
+  };
 
   if (!interstitialRef.current) {
     interstitialRef.current = InterstitialAd.createForAdRequest(adUnitId);
@@ -222,11 +288,32 @@ function Add(_: any, ref: any) {
   useImperativeHandle(ref, () => ({
     showAd(cb?: () => void) {
       if (cb) callbacksRef.current.push(cb);
+
+      const ad = interstitialRef.current;
+      if (!ad) {
+        pendingShowRef.current = false;
+        clearFallbackTimer();
+        drainCallbacks();
+        return;
+      }
+
       if (loadedRef.current) {
-        interstitialRef.current?.show();
+        pendingShowRef.current = false;
+        clearFallbackTimer();
+        try {
+          ad.show();
+        } catch {
+          drainCallbacks();
+        }
       } else {
-        const cbs = callbacksRef.current.splice(0);
-        cbs.forEach(fn => fn());
+        pendingShowRef.current = true;
+        ad.load();
+
+        clearFallbackTimer();
+        fallbackTimerRef.current = setTimeout(() => {
+          pendingShowRef.current = false;
+          drainCallbacks();
+        }, 2500);
       }
     },
   }));
@@ -238,13 +325,27 @@ function Add(_: any, ref: any) {
       AdEventType.LOADED,
       () => {
         loadedRef.current = true;
+        if (pendingShowRef.current && callbacksRef.current.length > 0) {
+          pendingShowRef.current = false;
+          clearFallbackTimer();
+          try {
+            ad.show();
+          } catch {
+            drainCallbacks();
+          }
+        }
         // console.log('✅ Ad Loaded');
       },
     );
 
     const unsubscribeError = ad.addAdEventListener(
       AdEventType.ERROR,
-      (error) => {
+      () => {
+        loadedRef.current = false;
+        pendingShowRef.current = false;
+        clearFallbackTimer();
+        drainCallbacks();
+        ad.load();
         // console.log('❌ Ad Error:', error);
       },
     );
@@ -253,8 +354,9 @@ function Add(_: any, ref: any) {
       AdEventType.CLOSED,
       () => {
         loadedRef.current = false;
-        const cbs = callbacksRef.current.splice(0);
-        cbs.forEach(fn => fn());
+        pendingShowRef.current = false;
+        clearFallbackTimer();
+        drainCallbacks();
         ad.load();
       },
     );
@@ -266,6 +368,7 @@ function Add(_: any, ref: any) {
 
     return () => {
       clearTimeout(loadAdTimeout);
+      clearFallbackTimer();
       unsubscribeLoaded();
       unsubscribeError();
       unsubscribeClosed();

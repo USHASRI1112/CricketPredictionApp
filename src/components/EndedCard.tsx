@@ -19,10 +19,58 @@ const EndedCard: React.FC<EndedCardProps> = ({ match, onPress }) => {
       .toUpperCase();
 
   const { team1Flag, team2Flag } = resolveMatchTeamFlags(match);
+  const localTime = match.dateTimeGMT
+    ? new Date(match.dateTimeGMT).toLocaleTimeString([], {
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: true,
+      })
+    : null;
 
-  const scoreMatches = (match.status || '').match(/(\d{1,4}\/\d{1,3})/g) || [];
-  const team1Score = scoreMatches[0] || '';
-  const team2Score = scoreMatches[1] || '';
+  const normalize = (value: string) =>
+    value.toLowerCase().replace(/[^a-z0-9]/g, '');
+
+  const formatScore = (runs: unknown, wickets: unknown) => {
+    const parsedRuns = Number(runs);
+    const parsedWickets = Number(wickets);
+
+    if (Number.isNaN(parsedRuns)) return '';
+    if (Number.isNaN(parsedWickets)) return `${parsedRuns}`;
+    return `${parsedRuns}/${parsedWickets}`;
+  };
+
+  const inningsWithScores = (match.score || [])
+    .map(inning => ({
+      inningLabel: String(inning.inning || ''),
+      scoreText: formatScore(inning.r, inning.w),
+    }))
+    .filter(item => item.scoreText);
+
+  const team1Key = normalize(match.teams[0] || '');
+  const team2Key = normalize(match.teams[1] || '');
+
+  const byTeam1 =
+    team1Key.length > 0
+      ? inningsWithScores.find(item => normalize(item.inningLabel).includes(team1Key))
+      : undefined;
+  const byTeam2 =
+    team2Key.length > 0
+      ? inningsWithScores.find(item => normalize(item.inningLabel).includes(team2Key))
+      : undefined;
+
+  const statusScoreMatches = (match.status || '').match(/(\d{1,4}(?:\/\d{1,3})?)/g) || [];
+
+  const team1Score =
+    byTeam1?.scoreText ||
+    inningsWithScores[0]?.scoreText ||
+    statusScoreMatches[0] ||
+    '';
+
+  const team2Score =
+    byTeam2?.scoreText ||
+    inningsWithScores[1]?.scoreText ||
+    statusScoreMatches[1] ||
+    '';
 
   return (
     <TouchableOpacity style={styles.card} onPress={onPress} activeOpacity={0.8}>
@@ -96,6 +144,12 @@ const EndedCard: React.FC<EndedCardProps> = ({ match, onPress }) => {
         <Text style={styles.metaText} numberOfLines={1}>📍 {match.venue}</Text>
         <View style={styles.footerDot} />
         <Text style={styles.metaText}>📅 {match.date}</Text>
+        {localTime ? (
+          <>
+            <View style={styles.footerDot} />
+            <Text style={styles.timeText}>🕐 {localTime}</Text>
+          </>
+        ) : null}
       </View>
     </TouchableOpacity>
   );
@@ -251,6 +305,11 @@ const styles = StyleSheet.create({
     color: '#5a7050',
     fontSize: 11,
     flex: 1,
+  },
+  timeText: {
+    color: '#a0b090',
+    fontSize: 11,
+    fontWeight: '600',
   },
 });
 

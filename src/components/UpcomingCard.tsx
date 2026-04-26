@@ -32,6 +32,13 @@ const UpcomingCard: React.FC<UpcomingCardProps> = ({ match, onPress }) => {
     name.split(' ').map(s => s[0]).slice(0, 2).join('').toUpperCase();
 
   const { team1Flag, team2Flag } = resolveMatchTeamFlags(match);
+  const localTime = match.dateTimeGMT
+    ? new Date(match.dateTimeGMT).toLocaleTimeString([], {
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: true,
+      })
+    : null;
 
   return (
     <TouchableOpacity style={styles.card} onPress={onPress} activeOpacity={0.8}>
@@ -92,6 +99,12 @@ const UpcomingCard: React.FC<UpcomingCardProps> = ({ match, onPress }) => {
         <Text style={styles.metaText} numberOfLines={1}>📍 {match.venue}</Text>
         <View style={styles.footerDot} />
         <Text style={styles.metaText}>📅 {match.date}</Text>
+        {localTime ? (
+          <>
+            <View style={styles.footerDot} />
+            <Text style={styles.footerTimeText}>🕐 {localTime}</Text>
+          </>
+        ) : null}
       </View>
     </TouchableOpacity>
   );
@@ -241,6 +254,11 @@ const styles = StyleSheet.create({
     color: '#2a5040',
     fontSize: 11,
     flex: 1,
+  },
+  footerTimeText: {
+    color: '#2a7060',
+    fontSize: 11,
+    fontWeight: '600',
   },
 });
 
