@@ -178,35 +178,21 @@ per backend instance. It preserves the existing unauthenticated app flow.
 Official hosting instructions: [Node.js deployment](https://getvoroa.com/docs/deploy-nodejs/)
 and [environment variables](https://getvoroa.com/docs/environment-variables/).
 
-### Download a debug APK from GitHub Actions
+### Build a standalone APK and release AAB on V2
 
-Push `.github/workflows/android-debug-apk.yml` and the app changes to the **V2**
-branch on GitHub. Every push to V2 automatically runs **Build Android Debug APK**;
-no merge into main is needed. Open Actions and select the latest V2 run. When it succeeds,
-open the run, download the `cricket-prediction-debug-<run number>` artifact, and
-unzip it to get `app-debug.apk`. No repository secrets or release signing key
-are needed for this debug build. The artifact is retained for 14 days.
+The **Build Android Release APK and AAB** workflow runs on every push to **V2**.
+It replaces the old debug APK workflow and produces two separately downloadable
+artifacts in one Gradle build:
 
-The APK supports ARM Android phones running Android 7.0 or later. It needs Metro
-and the backend on your Mac; it does not bundle JavaScript for standalone use.
-Start the backend with `npm run dev` from `backend/` and Metro with `npm start`
-from the repository root, in separate terminals. Install only the Android SDK
-**platform-tools** on your Mac, enable USB debugging on the phone, then run:
+- `cricket-prediction-release-apk-*`: unzip and install `app-release.apk` directly.
+- `cricket-prediction-release-aab-*`: unzip and upload `app-release.aab` to Play Console.
 
-```bash
-adb reverse tcp:8081 tcp:8081
-adb reverse tcp:3000 tcp:3000
-adb install -r /path/to/app-debug.apk
-```
+The APK includes JavaScript and uses the deployed HTTPS backend. It does not need
+Metro, a local backend, Android Studio, or ADB port forwarding. The old debug APK
+can be uninstalled first; uninstalling clears local app data. A Play Store install
+can also have a different signing certificate from a sideloaded release APK.
 
-Open the app while both servers are running. Android Studio and the Android build
-SDK are not needed on your Mac. A Play Store installation has a different signing
-certificate; uninstall it first if installation reports a signature conflict.
-Uninstalling clears the app's local data.
-
-### Build a signed release AAB from GitHub Actions
-
-Add these repository secrets under **Settings → Secrets and variables → Actions**:
+Add these repository **secrets** under **Settings → Secrets and variables → Actions**:
 
 | Secret | Value |
 | --- | --- |
@@ -215,39 +201,34 @@ Add these repository secrets under **Settings → Secrets and variables → Acti
 | `ANDROID_UPLOAD_KEY_ALIAS` | Upload key alias |
 | `ANDROID_UPLOAD_KEY_PASSWORD` | Key password |
 
-For an existing Play Store app, use the upload key already registered in Play
-Console. Encode that keystore on macOS with the following command, then paste
-from the clipboard into the base64 secret (replace the path with your key's path):
+Use the upload key already registered in Play Console. Encode it on macOS with:
 
 ```bash
 base64 -i /path/to/my-upload-key.keystore | pbcopy
 ```
 
-For release builds on **V2**, also add repository **variables** under
-**Settings → Secrets and variables → Actions → Variables**:
+Optional repository **variables** override the committed app configuration:
 
-| Variable | Value |
+| Variable | Default when omitted |
 | --- | --- |
-| `RELEASE_BACKEND_URL` | Deployed backend HTTPS URL |
-| `RELEASE_VERSION_CODE` | Integer higher than every version previously uploaded to Play Console |
-| `RELEASE_VERSION_NAME` | Display version, such as `1.0.2` (optional; defaults to `1.0.2`) |
+| `RELEASE_BACKEND_URL` | Production HTTPS URL in `src/config/Backend.ts` |
+| `RELEASE_VERSION_CODE` | Version code in `android/app/build.gradle` (currently `3`) |
+| `RELEASE_VERSION_NAME` | `1.0.2` |
 
-Push to V2 to automatically run the release workflow. Its build job is skipped
-until the backend URL and version-code variables are configured. After setting
-or updating variables, push another commit or rerun the skipped workflow run.
-Both build workflows are restricted to V2; main does not need to change.
-Increase the version-code variable before building each new Play Console upload.
-Download and
-unzip the release artifact to obtain `app-release.aab`. Upload that bundle to
-Play Console, usually to an internal testing track first. The workflow does not
-publish automatically. AAB files are uploaded to Play Console, not installed
-directly like APK files.
+These release settings are also accepted from same-named secrets for compatibility
+if they were accidentally saved under Secrets instead of Variables. Signing
+credentials must remain secrets. Manual workflow inputs take priority when used.
 
-The workflow configures the production URL only in its temporary checkout,
-bundles JavaScript, builds every architecture configured in Gradle, and signs
-with your upload key. Metro and localhost are not used by release builds. The
-backend must be deployed and configured before testing a release.
+The workflow no longer skips its build for missing repository variables. It uses
+the defaults above, validates configuration before building, and reports a clear
+error if something is missing or invalid. Increase the version code above every
+previous Play Console upload before publishing another version. Re-running a build
+does not automatically increase its version code.
 
-Local release signing can use the `MYAPP_UPLOAD_*` environment variables or
-properties in `~/.gradle/gradle.properties`. Signing passwords are no longer stored
-in the repository's `android/gradle.properties`.
+After pushing V2, open the latest release run under Actions and download its APK
+or AAB artifacts once the run succeeds. Both signatures are checked before upload.
+The workflow does not publish to Google Play or modify main. Artifacts remain for
+14 days. Deploy the backend and verify its credentials before testing the app.
+
+Local release signing can use `MYAPP_UPLOAD_*` environment variables or properties
+in `~/.gradle/gradle.properties`.
