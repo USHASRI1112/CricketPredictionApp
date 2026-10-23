@@ -179,9 +179,9 @@ and [environment variables](https://getvoroa.com/docs/environment-variables/).
 
 ### Download a debug APK from GitHub Actions
 
-Push `.github/workflows/android-debug-apk.yml` and the app changes to GitHub.
-On the repository's default branch, open **Actions → Build Android Debug APK →
-Run workflow**, select the branch to build, and start the run. When it succeeds,
+Push `.github/workflows/android-debug-apk.yml` and the app changes to the **V2**
+branch on GitHub. Every push to V2 automatically runs **Build Android Debug APK**;
+no merge into main is needed. Open Actions and select the latest V2 run. When it succeeds,
 open the run, download the `cricket-prediction-debug-<run number>` artifact, and
 unzip it to get `app-debug.apk`. No repository secrets or release signing key
 are needed for this debug build. The artifact is retained for 14 days.
@@ -222,9 +222,21 @@ from the clipboard into the base64 secret (replace the path with your key's path
 base64 -i /path/to/my-upload-key.keystore | pbcopy
 ```
 
-Push the workflow to the default branch, open **Actions → Build Android Release
-AAB → Run workflow**, and supply the deployed backend's HTTPS URL, a version code
-higher than every previously uploaded version, and a version name. Download and
+For release builds on **V2**, also add repository **variables** under
+**Settings → Secrets and variables → Actions → Variables**:
+
+| Variable | Value |
+| --- | --- |
+| `RELEASE_BACKEND_URL` | Deployed backend HTTPS URL |
+| `RELEASE_VERSION_CODE` | Integer higher than every version previously uploaded to Play Console |
+| `RELEASE_VERSION_NAME` | Display version, such as `1.0.2` (optional; defaults to `1.0.2`) |
+
+Push to V2 to automatically run the release workflow. Its build job is skipped
+until the backend URL and version-code variables are configured. After setting
+or updating variables, push another commit or rerun the skipped workflow run.
+Both build workflows are restricted to V2; main does not need to change.
+Increase the version-code variable before building each new Play Console upload.
+Download and
 unzip the release artifact to obtain `app-release.aab`. Upload that bundle to
 Play Console, usually to an internal testing track first. The workflow does not
 publish automatically. AAB files are uploaded to Play Console, not installed
