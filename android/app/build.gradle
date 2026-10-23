@@ -83,8 +83,8 @@ android {
         applicationId ="com.cricket.aipredictionapp"
         minSdkVersion = rootProject.ext.minSdkVersion
         targetSdkVersion = rootProject.ext.targetSdkVersion
-        versionCode = 2
-        versionName ="1.0.1"
+        versionCode = (findProperty("APP_VERSION_CODE") ?: "2").toInteger()
+        versionName = findProperty("APP_VERSION_NAME") ?: "1.0.1"
     }
     signingConfigs {
         debug {
@@ -94,10 +94,13 @@ android {
             keyPassword 'android'
         }
         release {
-            storeFile file(MYAPP_UPLOAD_STORE_FILE)
-            storePassword MYAPP_UPLOAD_STORE_PASSWORD
-            keyAlias MYAPP_UPLOAD_KEY_ALIAS
-            keyPassword MYAPP_UPLOAD_KEY_PASSWORD
+            def uploadStore = System.getenv("MYAPP_UPLOAD_STORE_FILE") ?: findProperty("MYAPP_UPLOAD_STORE_FILE")
+            if (uploadStore) {
+                storeFile file(uploadStore)
+            }
+            storePassword System.getenv("MYAPP_UPLOAD_STORE_PASSWORD") ?: findProperty("MYAPP_UPLOAD_STORE_PASSWORD")
+            keyAlias System.getenv("MYAPP_UPLOAD_KEY_ALIAS") ?: findProperty("MYAPP_UPLOAD_KEY_ALIAS")
+            keyPassword System.getenv("MYAPP_UPLOAD_KEY_PASSWORD") ?: findProperty("MYAPP_UPLOAD_KEY_PASSWORD")
         }
     }
     buildTypes {

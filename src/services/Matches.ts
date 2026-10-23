@@ -61,7 +61,7 @@ const incrementFetchCount = async () => {
 };
 
 const fetchAllMatches = async (): Promise<Match[]> => {
-  const res = await fetch(CricketApiEndpoints.MATCHES);
+  const res = await fetch(await CricketApiEndpoints.MATCHES());
 
   if (!res.ok) {
     return [];
@@ -79,7 +79,7 @@ const fetchSlidingCurrentMatches = async (): Promise<Match[]> => {
     const fetchCount = await getFetchCount();
 
     if (!premium && fetchCount >= MAX_DAILY_FULL_FETCH) {
-      const res = await fetch(CricketApiEndpoints.CURRENT_MATCHES(0));
+      const res = await fetch(await CricketApiEndpoints.CURRENT_MATCHES(0));
 
       if (!res.ok) {
         return [];
@@ -90,7 +90,7 @@ const fetchSlidingCurrentMatches = async (): Promise<Match[]> => {
       return matches;
     }
 
-    const firstRes = await fetch(CricketApiEndpoints.CURRENT_MATCHES(0));
+    const firstRes = await fetch(await CricketApiEndpoints.CURRENT_MATCHES(0));
 
     if (!firstRes.ok) {
       return [];
@@ -125,8 +125,8 @@ const fetchSlidingCurrentMatches = async (): Promise<Match[]> => {
     );
 
     if (offsets.length > 0) {
-      const requests = offsets.map(offset =>
-        fetch(CricketApiEndpoints.CURRENT_MATCHES(offset))
+      const requests = offsets.map(async offset =>
+        fetch(await CricketApiEndpoints.CURRENT_MATCHES(offset))
           .then(res => {
             if (!res.ok) {
               return [];

@@ -44,7 +44,7 @@ export const fetchPrediction = async (
       scoreText,
     };
 
-    const response = await fetch(CricketApiEndpoints.PREDICT, {
+    const response = await fetch(CricketApiEndpoints.PREDICT(), {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -53,6 +53,9 @@ export const fetchPrediction = async (
       body: JSON.stringify({ data: requestData }),
     });
 
+    if (!response.ok) {
+      throw new Error('Prediction request failed');
+    }
     const prediction = (await response.json()) as {
       result: PredictionResponse;
     };

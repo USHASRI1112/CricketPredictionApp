@@ -1,10 +1,6 @@
-import { onCall } from 'firebase-functions/v2/https';
-import { onSchedule } from 'firebase-functions/v2/scheduler';
-import { setGlobalOptions } from 'firebase-functions/v2';
-import * as logger from 'firebase-functions/logger';
 import * as admin from 'firebase-admin';
 import axios from 'axios';
-import { defineSecret } from 'firebase-functions/params';
+import { logger } from './logger';
 
 // ─── Firebase Init ────────────────────────────────────────────────────────
 const envProjectId =
@@ -13,8 +9,13 @@ const envProjectId =
   process.env.GCP_PROJECT ||
   process.env.GCLOUD_PROJECT_ID;
 
-admin.initializeApp(envProjectId ? { projectId: envProjectId } : undefined);
-setGlobalOptions({ maxInstances: 10 });
+const credentialJson = process.env.FIREBASE_SERVICE_ACCOUNT_JSON;
+admin.initializeApp({
+  ...(envProjectId ? { projectId: envProjectId } : {}),
+  credential: credentialJson
+    ? admin.credential.cert(JSON.parse(credentialJson))
+    : admin.credential.applicationDefault(),
+});
 
 // ─── Firestore collections ────────────────────────────────────────────────
 const CACHE_COL = 'cricket_cache';
@@ -24,7 +25,12 @@ const RATE_LIMIT_DOC = 'rate_limit';
 const ACTIVITY_DOC = 'user_activity';
 
 // ─── API Config ───────────────────────────────────────────────────────────
-const API_KEY = '5de3a03b-2e22-442c-85cc-d03e80e45715';
+// Set in the Voroa service environment; the app reads /config/cric-api.
+export function getCricApiKey(): string {
+  const key = process.env.CRIC_API_KEY?.trim();
+  if (!key) throw new Error('CRIC_API_KEY is not configured');
+  return key;
+}
 const BASE_URL = 'https://api.cricapi.com/v1';
 
 // ─── IPL Season (used only for fetch frequency, NOT for notifications) ────
@@ -114,7 +120,7 @@ interface FetchTrackerDoc {
   lastFetchAt: number;
 }
 
-interface PredictRequest {
+export interface PredictRequest {
   matchId: string;
   teamA: string;
   teamB: string;
@@ -346,8 +352,9 @@ async function fetchPage(
   offset: number,
 ): Promise<{ matches: Match[]; totalRows: number }> {
   try {
-    const url = `${BASE_URL}/currentMatches?apikey=${API_KEY}&offset=${offset}`;
-    const res = await axios.get(url);
+    const key = getCricApiKey();
+    const url = `${BASE_URL}/currentMatches?apikey=${encodeURIComponent(key)}&offset=${offset}`;
+    const res = await axios.get(url, { timeout: 15000 });
     const json = res.data as ApiPage;
     const matches = json.data || [];
     const totalRows = json.info?.totalRows || matches.length;
@@ -779,209 +786,208 @@ async function checkAndNotify(matches: Match[]): Promise<void> {
 //  ④ Save                        — live scores to Firestore
 //  ⑤ Notify                      — EVERY DAY, 15 min throttle, max 5/match
 // ────────────────────────────────────────────────────────────────────────────
-export const cricketMaster = onSchedule(
-  {
-    schedule: '*/1 * * * *',
-    region: 'us-central1',
-    timeoutSeconds: 120,
-    memory: '256MiB',
-  },
-  async (): Promise<void> => {
-    logger.info('[Master] ▶ Starting');
+export async function cricketMaster(): Promise<void> {
+  logger.info('[Master] ▶ Starting');
 
-    try {
-      // ① Dual-frequency activity gate
-      const isPremium = isPremiumPeriod();
-      const shouldFetch = await shouldFetchBasedOnActivity();
-      if (!shouldFetch) {
-        logger.info('[Master] ⏭ Fetch throttled or no user activity in 10 min — skipping');
-        return;
-      }
-
-      // ② Rate limit guard
-      const rateLimit = await getRateLimit();
-      if (rateLimit.hitsUsed >= rateLimit.hitsLimit - 5) {
-        logger.warn(`[Master] ⚠ Rate limit near (${rateLimit.hitsUsed}/${rateLimit.hitsLimit}) — skipping`);
-        return;
-      }
-
-      // ③ Firebase live-score freshness guard disabled.
-      // We now fetch directly from CricAPI on each schedule run and do not
-      // read match data from Firestore.
-      const isActiveTime = isPremium || (isIPLSeason() && isIPLMatchHours());
-      logger.info(
-        `[Master] Fetching direct from CricAPI — IPL active: ${isActiveTime},` +
-        ` hits: ${rateLimit.hitsUsed}/${rateLimit.hitsLimit}`
-      );
-
-      /*
-       * Disabled intentionally: no Firestore-based match freshness check.
-       *
-       * const snap = await admin.firestore()
-       *   .collection(CACHE_COL).doc(LIVE_SCORES_DOC).get();
-       * const lastUpdatedAt = snap.exists
-       *   ? (snap.data() as LiveScoreDoc).lastUpdatedAt : 0;
-       * const msSinceLast = Date.now() - lastUpdatedAt;
-       * const thresholdMs = isActiveTime ? 1 * 60 * 1000 : 7 * 60 * 1000;
-       *
-       * if (msSinceLast < thresholdMs) {
-       *   logger.info(`[Master] ⏭ Data fresh (${Math.round(msSinceLast / 1000)}s) — skipping fetch`);
-       *   const existingMatches = snap.exists
-       *     ? (snap.data() as LiveScoreDoc).matches : [];
-       *   if (existingMatches.length > 0) {
-       *     await checkAndNotify(existingMatches);
-       *   }
-       *   return;
-       * }
-       */
-
-      // ④ Fetch
-      const matches = await fetchCurrentMatches();
-      if (matches.length === 0) {
-        logger.warn('[Master] No matches returned');
-        return;
-      }
-
-      const extraPages = Math.max(0, Math.ceil(Math.min(matches.length, MAX_ROWS) / 25) - 1);
-      await incrementRateLimit(1 + extraPages);
-
-      // ⑤ Save live scores
-      await saveLiveScores(matches);
-
-      // ⑥ Notifications — every day, 15 min throttle, max 5/match
-      await checkAndNotify(matches);
-
-      logger.info(
-        `[Master] ✅ Done — live: ${matches.filter(isLive).length}/${matches.length}`
-      );
-
-    } catch (error) {
-      logger.error('[Master] ❌ Failed:', error);
-      throw error;
+  try {
+    // ① Dual-frequency activity gate
+    const isPremium = isPremiumPeriod();
+    const shouldFetch = await shouldFetchBasedOnActivity();
+    if (!shouldFetch) {
+      logger.info('[Master] ⏭ Fetch throttled or no user activity in 10 min — skipping');
+      return;
     }
-  },
-);
+
+    // ② Rate limit guard
+    const rateLimit = await getRateLimit();
+    if (rateLimit.hitsUsed >= rateLimit.hitsLimit - 5) {
+      logger.warn(`[Master] ⚠ Rate limit near (${rateLimit.hitsUsed}/${rateLimit.hitsLimit}) — skipping`);
+      return;
+    }
+
+    // ③ Firebase live-score freshness guard disabled.
+    // We now fetch directly from CricAPI on each schedule run and do not
+    // read match data from Firestore.
+    const isActiveTime = isPremium || (isIPLSeason() && isIPLMatchHours());
+    logger.info(
+      `[Master] Fetching direct from CricAPI — IPL active: ${isActiveTime},` +
+      ` hits: ${rateLimit.hitsUsed}/${rateLimit.hitsLimit}`
+    );
+
+    /*
+     * Disabled intentionally: no Firestore-based match freshness check.
+     *
+     * const snap = await admin.firestore()
+     *   .collection(CACHE_COL).doc(LIVE_SCORES_DOC).get();
+     * const lastUpdatedAt = snap.exists
+     *   ? (snap.data() as LiveScoreDoc).lastUpdatedAt : 0;
+     * const msSinceLast = Date.now() - lastUpdatedAt;
+     * const thresholdMs = isActiveTime ? 1 * 60 * 1000 : 7 * 60 * 1000;
+     *
+     * if (msSinceLast < thresholdMs) {
+     *   logger.info(`[Master] ⏭ Data fresh (${Math.round(msSinceLast / 1000)}s) — skipping fetch`);
+     *   const existingMatches = snap.exists
+     *     ? (snap.data() as LiveScoreDoc).matches : [];
+     *   if (existingMatches.length > 0) {
+     *     await checkAndNotify(existingMatches);
+     *   }
+     *   return;
+     * }
+     */
+
+    // ④ Fetch
+    const matches = await fetchCurrentMatches();
+    if (matches.length === 0) {
+      logger.warn('[Master] No matches returned');
+      return;
+    }
+
+    const extraPages = Math.max(0, Math.ceil(Math.min(matches.length, MAX_ROWS) / 25) - 1);
+    await incrementRateLimit(1 + extraPages);
+
+    // ⑤ Save live scores
+    await saveLiveScores(matches);
+
+    // ⑥ Notifications — every day, 15 min throttle, max 5/match
+    await checkAndNotify(matches);
+
+    logger.info(
+      `[Master] ✅ Done — live: ${matches.filter(isLive).length}/${matches.length}`
+    );
+
+  } catch (error) {
+    logger.error('[Master] ❌ Failed:', error);
+    throw error;
+  }
+}
 
 // ────────────────────────────────────────────────────────────────────────────
-//  predictMatch — unchanged
+//  predictMatch
 // ────────────────────────────────────────────────────────────────────────────
-const config = defineSecret('FUNCTIONS_CONFIG_EXPORT');
+export async function predictMatch(body: PredictRequest): Promise<PredictionResponse> {
+  try {
+    logger.info('Received prediction request', body);
 
-export const predictMatch = onCall(
-  { secrets: [config] },
-  async (request): Promise<PredictionResponse> => {
-    try {
-      const body: any = request.data as PredictRequest;
-      logger.info('Received prediction request', body);
+    const {
+      matchId, teamA, teamB, date, tournament,
+      matchType, venue, status, matchEnded, scoreText,
+    } = body;
 
-      const {
-        matchId, teamA, teamB, date, tournament,
-        matchType, venue, status, matchEnded, scoreText,
-      } = body;
+    const predictionDate = date || new Date().toISOString().slice(0, 10);
+    const groqKey = process.env.GROQ_API_KEY?.trim();
+    if (!groqKey) throw new Error('GROQ_API_KEY is not configured');
 
-      const predictionDate = date || new Date().toISOString().slice(0, 10);
-      const groqKey = JSON.parse(config.value()).groq.key;
+    const prompt = `
+        You are an elite international cricket analyst with deep expertise in:
+        - team composition, batting depth, bowling quality
+        - pitch conditions and venue behavior
+        - match situations, pressure handling, and game momentum
+        - historical team performance and player roles
 
-      const prompt = `
-          You are an elite international cricket analyst with deep expertise in:
-          - team composition, batting depth, bowling quality
-          - pitch conditions and venue behavior
-          - match situations, pressure handling, and game momentum
-          - historical team performance and player roles
+        Your analysis must sound like a professional broadcast expert, not generic AI.
 
-          Your analysis must sound like a professional broadcast expert, not generic AI.
+        Match Details:
+        Match ID: ${matchId}
+        Date: ${predictionDate}
+        Teams: ${teamA} vs ${teamB}
+        Tournament: ${tournament}
+        Format: ${matchType}
+        Venue: ${venue}
+        Match Status: ${status}
+        Match Ended: ${matchEnded}
+        Current Score: ${scoreText}
 
-          Match Details:
-          Match ID: ${matchId}
-          Date: ${predictionDate}
-          Teams: ${teamA} vs ${teamB}
-          Tournament: ${tournament}
-          Format: ${matchType}
-          Venue: ${venue}
-          Match Status: ${status}
-          Match Ended: ${matchEnded}
-          Current Score: ${scoreText}
+        Instructions:
 
-          Instructions:
+        1. If Match Ended = true:
+          - If status contains "won" → return actual winner with confidence = "Actual"
+          - If status contains "No result" or "abandoned" → winner = "No Result", confidence = "Actual"
 
-          1. If Match Ended = true:
-            - If status contains "won" → return actual winner with confidence = "Actual"
-            - If status contains "No result" or "abandoned" → winner = "No Result", confidence = "Actual"
+        2. If LIVE:
+          - Base prediction on:
+            • current score (runs/wickets)
+            • overs completed
+            • required vs current run rate
+            • wickets in hand
+            • match phase (powerplay, middle overs, death overs)
+            • momentum shifts (recent wickets or partnerships)
+          - You MUST explicitly reference the score or overs in the reason.
+          - Give more weight to current match situation than pre-match strength.
 
-          2. If LIVE:
-            - Base prediction on:
-              • current score (runs/wickets)
-              • overs completed
-              • required vs current run rate
-              • wickets in hand
-              • match phase (powerplay, middle overs, death overs)
-              • momentum shifts (recent wickets or partnerships)
-            - You MUST explicitly reference the score or overs in the reason.
-            - Give more weight to current match situation than pre-match strength.
+        3. If UPCOMING:
+          - Predict using:
+            • team balance (batting vs bowling strength)
+            • venue & pitch behavior
+            • format-specific strengths (T20/ODI/Test)
 
-          3. If UPCOMING:
-            - Predict using:
-              • team balance (batting vs bowling strength)
-              • venue & pitch behavior
-              • format-specific strengths (T20/ODI/Test)
+        4. Always return EXACTLY ONE winner (or "No Result")
 
-          4. Always return EXACTLY ONE winner (or "No Result")
+        5. Confidence Rules:
+          - High → clear advantage
+          - Medium → slight edge
+          - Low → very close / uncertain
+          - Actual → match already decided
 
-          5. Confidence Rules:
-            - High → clear advantage
-            - Medium → slight edge
-            - Low → very close / uncertain
-            - Actual → match already decided
+        6. Include winProbability (0–100%) based on match situation realism
 
-          6. Include winProbability (0–100%) based on match situation realism
+        7. Include keyFactor:
+          - Maximum 5 words
+          - The single biggest deciding factor
 
-          7. Include keyFactor:
-            - Maximum 5 words
-            - The single biggest deciding factor
+        8. Reason MUST:
+          - Be between 200–250 words
+          - Be specific and match-aware
+          - Mention score, overs, pitch, or team strengths
+          - Sound like a TV cricket analyst
+          - Avoid generic phrases
 
-          8. Reason MUST:
-            - Be between 200–250 words
-            - Be specific and match-aware
-            - Mention score, overs, pitch, or team strengths
-            - Sound like a TV cricket analyst
-            - Avoid generic phrases
+        9. If reason exceeds 100 words, shorten it automatically
 
-          9. If reason exceeds 100 words, shorten it automatically
+        10. Return ONLY valid JSON:
+        Do not include markdown, explanations, or backticks.
 
-          10. Return ONLY valid JSON:
-          Do not include markdown, explanations, or backticks.
-
-          Output format:
-          {"winner":"Team Name or No Result","confidence":"Low|Medium|High|Actual","winProbability":"0-100%","keyFactor":"short phrase","reason":"Expert cricket analysis"}
+        Output format:
+        {"winner":"Team Name or No Result","confidence":"Low|Medium|High|Actual","winProbability":"0-100%","keyFactor":"short phrase","reason":"Expert cricket analysis"}
 `;
-      const response = await axios.post(
-        'https://api.groq.com/openai/v1/chat/completions',
-        {
-          model: 'llama-3.3-70b-versatile',
-          messages: [
-            { role: 'system', content: 'You are a cricket prediction AI.' },
-            { role: 'user', content: prompt },
-          ],
-          temperature: 0.7,
+    const response = await axios.post(
+      'https://api.groq.com/openai/v1/chat/completions',
+      {
+        model: process.env.GROQ_MODEL?.trim() || 'openai/gpt-oss-20b',
+        response_format: { type: 'json_object' },
+        messages: [
+          { role: 'system', content: 'You are a cricket prediction AI.' },
+          { role: 'user', content: prompt },
+        ],
+        temperature: 0.7,
+      },
+      {
+        timeout: 25000,
+        headers: {
+          Authorization: `Bearer ${groqKey}`,
+          'Content-Type': 'application/json',
         },
-        {
-          headers: {
-            Authorization: `Bearer ${groqKey}`,
-            'Content-Type': 'application/json',
-          },
-        },
-      );
+      },
+    );
 
-      const content = response.data.choices[0].message.content;
-      const parsed: PredictionResponse = JSON.parse(content);
-      logger.info('Prediction done', parsed);
-      return parsed;
+    const content = response.data.choices[0].message.content;
+    const parsed: PredictionResponse = JSON.parse(content);
+    logger.info('Prediction done', parsed);
+    return parsed;
 
-    } catch (error) {
+  } catch (error) {
+    if (axios.isAxiosError(error)) {
+      // Keep credentials and raw request/response payloads out of logs.
+      const upstreamCode = error.response?.data?.error?.code;
+      logger.error('Prediction failed', {
+        status: error.response?.status,
+        code: typeof upstreamCode === 'string' && /^[a-zA-Z0-9_-]{1,80}$/.test(upstreamCode)
+          ? upstreamCode : undefined,
+        model: process.env.GROQ_MODEL?.trim() || 'openai/gpt-oss-20b',
+      });
+    } else {
       logger.error('Prediction failed', error);
-      throw new Error('Prediction failed');
     }
-  },
-);
+    throw new Error('Prediction failed');
+  }
+}
 
-logger.info('Cricket Functions ready ✅', { structuredData: true });

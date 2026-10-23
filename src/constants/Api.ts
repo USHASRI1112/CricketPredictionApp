@@ -1,26 +1,18 @@
-const CricketApiBaseUrl = 'https://api.cricapi.com';
-const CricketApiVersion = 'v1';
-const CricketApiSubPath = {
-  MATCHES: 'matches',
-  COUNTRIES: 'countries',
-  CURRENT_MATCHES: 'currentMatches',
-  MATCH_INFO: 'match_info',
-  SERIES_INFO: 'series_info',
-};
+import { backendUrl } from '../config/Backend';
+import { getCricApiKey } from '../services/CricApiConfig';
 
-const API_KEY = '5de3a03b-2e22-442c-85cc-d03e80e45715';
+const CricketApiBaseUrl = 'https://api.cricapi.com/v1';
 
-const PredictionApiBaseUrl = 'https://predictmatch-bln23it7tq-uc.a.run.app';
+async function cricketUrl(path: string, params: string): Promise<string> {
+  const key = await getCricApiKey();
+  return `${CricketApiBaseUrl}/${path}?apikey=${encodeURIComponent(key)}&${params}`;
+}
 
 export const CricketApiEndpoints = {
-  MATCHES: `${CricketApiBaseUrl}/${CricketApiVersion}/${CricketApiSubPath.MATCHES}?apikey=${API_KEY}&offset=0`,
-  COUNTRIES: `${CricketApiBaseUrl}/${CricketApiVersion}/${CricketApiSubPath.COUNTRIES}?apikey=${API_KEY}&offset=0`,
-  CURRENT_MATCHES: (offset: number = 0) => `${CricketApiBaseUrl}/${CricketApiVersion}/${CricketApiSubPath.CURRENT_MATCHES}?apikey=${API_KEY}&offset=${offset}`,
-  PREDICT: PredictionApiBaseUrl,
-  MATCH_DETAILS: (matchId: string) =>
-    `${CricketApiBaseUrl}/${CricketApiVersion}/${CricketApiSubPath.MATCH_INFO}?apikey=${API_KEY}&id=${matchId}`,
-  SERIES_DETAILS: (seriesId: string) =>
-    `${CricketApiBaseUrl}/${CricketApiVersion}/${CricketApiSubPath.SERIES_INFO}?apikey=${API_KEY}&id=${seriesId}`,
+  MATCHES: () => cricketUrl('matches', 'offset=0'),
+  COUNTRIES: () => cricketUrl('countries', 'offset=0'),
+  CURRENT_MATCHES: (offset: number = 0) => cricketUrl('currentMatches', `offset=${offset}`),
+  PREDICT: () => backendUrl('/predictMatch'),
+  MATCH_DETAILS: (matchId: string) => cricketUrl('match_info', `id=${encodeURIComponent(matchId)}`),
+  SERIES_DETAILS: (seriesId: string) => cricketUrl('series_info', `id=${encodeURIComponent(seriesId)}`),
 };
-
-

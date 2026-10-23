@@ -1,0 +1,148 @@
+name: Build Android Release AAB
+
+on:
+  workflow_dispatch:
+    inputs:
+      backend_url:
+        description: 'Deployed production backend HTTPS URL'
+        required: true
+        type: string
+      version_code:
+        description: 'Unique version code higher than every version uploaded to Play Console'
+        required: true
+        type: string
+      version_name:
+        description: 'User-visible version name (for example 1.0.2)'
+        required: true
+        type: string
+        default: '1.0.2'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: android-release-aab-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build signed release bundle
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '22.22.2'
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Validate release inputs and configure production backend
+        env:
+          BACKEND_URL: ${{ inputs.backend_url }}
+          VERSION_CODE: ${{ inputs.version_code }}
+          VERSION_NAME: ${{ inputs.version_name }}
+        run: |
+          node <<'NODE'
+          const fs = require('node:fs');
+          const url = new URL(process.env.BACKEND_URL.trim());
+          if (url.protocol !== 'https:' || url.username || url.password || url.search || url.hash ||
+              ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname)) {
+            throw new Error('Provide a production HTTPS backend URL without credentials, query, or fragment');
+          }
+          const versionCode = process.env.VERSION_CODE;
+          if (!/^[1-9]\d*$/.test(versionCode) || Number(versionCode) > 2100000000) {
+            throw new Error('Version code must be a positive integer no greater than 2100000000');
+          }
+          if (!/^[A-Za-z0-9][A-Za-z0-9.+_-]{0,49}$/.test(process.env.VERSION_NAME)) {
+            throw new Error('Provide a version name of 1–50 letters, digits, dots, pluses, hyphens, or underscores');
+          }
+          const file = 'src/config/Backend.ts';
+          const source = fs.readFileSync(file, 'utf8');
+          const declaration = /^const PRODUCTION_BACKEND_URL = .*;$/m;
+          if (!declaration.test(source)) throw new Error('Production backend declaration not found');
+          fs.writeFileSync(file, source.replace(declaration, () =>
+            `const PRODUCTION_BACKEND_URL = ${JSON.stringify(url.href.replace(/\/$/, ''))};`));
+          NODE
+
+      - name: Set up Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          packages: 'platform-tools platforms;android-36 build-tools;36.0.0 ndk;27.1.12297006 cmake;3.22.1'
+
+      - name: Install app dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Restore upload keystore
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_UPLOAD_KEYSTORE_BASE64 }}
+          MYAPP_UPLOAD_STORE_PASSWORD: ${{ secrets.ANDROID_UPLOAD_STORE_PASSWORD }}
+          MYAPP_UPLOAD_KEY_ALIAS: ${{ secrets.ANDROID_UPLOAD_KEY_ALIAS }}
+          MYAPP_UPLOAD_KEY_PASSWORD: ${{ secrets.ANDROID_UPLOAD_KEY_PASSWORD }}
+        run: |
+          python3 <<'PY'
+          import base64
+          import os
+          from pathlib import Path
+          required = ['KEYSTORE_BASE64', 'MYAPP_UPLOAD_STORE_PASSWORD',
+                      'MYAPP_UPLOAD_KEY_ALIAS', 'MYAPP_UPLOAD_KEY_PASSWORD']
+          for name in required:
+              if not os.environ.get(name):
+                  raise SystemExit(f'Missing signing secret: {name}')
+          data = base64.b64decode(''.join(os.environ['KEYSTORE_BASE64'].split()), validate=True)
+          if not data:
+              raise SystemExit('Upload keystore is empty')
+          path = Path(os.environ['RUNNER_TEMP']) / 'upload-keystore.jks'
+          path.write_bytes(data)
+          path.chmod(0o600)
+          PY
+
+      - name: Build signed release AAB
+        working-directory: android
+        env:
+          MYAPP_UPLOAD_STORE_FILE: ${{ runner.temp }}/upload-keystore.jks
+          MYAPP_UPLOAD_STORE_PASSWORD: ${{ secrets.ANDROID_UPLOAD_STORE_PASSWORD }}
+          MYAPP_UPLOAD_KEY_ALIAS: ${{ secrets.ANDROID_UPLOAD_KEY_ALIAS }}
+          MYAPP_UPLOAD_KEY_PASSWORD: ${{ secrets.ANDROID_UPLOAD_KEY_PASSWORD }}
+          ORG_GRADLE_PROJECT_APP_VERSION_CODE: ${{ inputs.version_code }}
+          ORG_GRADLE_PROJECT_APP_VERSION_NAME: ${{ inputs.version_name }}
+        run: bash ./gradlew :app:bundleRelease --no-daemon --max-workers=2
+
+      - name: Verify bundle signature
+        run: |
+          jarsigner -verify android/app/build/outputs/bundle/release/app-release.aab > "$RUNNER_TEMP/aab-signature.txt"
+          cat "$RUNNER_TEMP/aab-signature.txt"
+          grep -q 'jar verified\.' "$RUNNER_TEMP/aab-signature.txt"
+
+      - name: Upload release AAB
+        uses: actions/upload-artifact@v4
+        with:
+          name: cricket-prediction-release-${{ inputs.version_code }}-${{ github.run_number }}
+          path: android/app/build/outputs/bundle/release/app-release.aab
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Remove temporary signing key
+        if: always()
+        run: rm -f "$RUNNER_TEMP/upload-keystore.jks"
+
+      - name: Add download instructions
+        run: |
+          cat >> "$GITHUB_STEP_SUMMARY" <<'SUMMARY'
+          ## Signed release AAB ready
+          Download the release artifact from this run and unzip `app-release.aab`.
+          Upload it to the appropriate testing or production track in Play Console.
+          This workflow builds the bundle only; it does not publish to Google Play.
+          The release includes JavaScript and uses the supplied HTTPS backend URL.
+          SUMMARY
