@@ -865,6 +865,7 @@ export async function cricketMaster(): Promise<void> {
 //  predictMatch
 // ────────────────────────────────────────────────────────────────────────────
 export async function predictMatch(body: PredictRequest): Promise<PredictionResponse> {
+  const startedAt = Date.now();
   try {
     logger.info('Received prediction request', body);
 
@@ -876,6 +877,11 @@ export async function predictMatch(body: PredictRequest): Promise<PredictionResp
     const predictionDate = date || new Date().toISOString().slice(0, 10);
     const groqKey = process.env.GROQ_API_KEY?.trim();
     if (!groqKey) throw new Error('GROQ_API_KEY is not configured');
+    const model = process.env.GROQ_MODEL?.trim() || 'openai/gpt-oss-20b';
+    const effort = process.env.GROQ_REASONING_EFFORT?.trim() || 'low';
+    if (!['low', 'medium', 'high'].includes(effort)) {
+      throw new Error('GROQ_REASONING_EFFORT must be low, medium, or high');
+    }
 
     const prompt = `
         You are an elite international cricket analyst with deep expertise in:
@@ -935,7 +941,7 @@ export async function predictMatch(body: PredictRequest): Promise<PredictionResp
           - The single biggest deciding factor
 
         8. Reason MUST:
-          - Be between 200–250 words
+          - Be between 70–100 words
           - Be specific and match-aware
           - Mention score, overs, pitch, or team strengths
           - Sound like a TV cricket analyst
@@ -952,7 +958,11 @@ export async function predictMatch(body: PredictRequest): Promise<PredictionResp
     const response = await axios.post(
       'https://api.groq.com/openai/v1/chat/completions',
       {
-        model: process.env.GROQ_MODEL?.trim() || 'openai/gpt-oss-20b',
+        model,
+        // These controls are supported by GPT-OSS; do not send them to unrelated models.
+        ...(model === 'openai/gpt-oss-20b' || model === 'openai/gpt-oss-120b'
+          ? { reasoning_effort: effort, include_reasoning: false } : {}),
+        max_completion_tokens: 1536,
         response_format: { type: 'json_object' },
         messages: [
           { role: 'system', content: 'You are a cricket prediction AI.' },
@@ -977,9 +987,10 @@ export async function predictMatch(body: PredictRequest): Promise<PredictionResp
   } catch (error) {
     if (axios.isAxiosError(error)) {
       // Keep credentials and raw request/response payloads out of logs.
-      const upstreamCode = error.response?.data?.error?.code;
+      const upstreamCode = error.response?.data?.error?.code || error.code;
       logger.error('Prediction failed', {
         status: error.response?.status,
+        durationMs: Date.now() - startedAt,
         code: typeof upstreamCode === 'string' && /^[a-zA-Z0-9_-]{1,80}$/.test(upstreamCode)
           ? upstreamCode : undefined,
         model: process.env.GROQ_MODEL?.trim() || 'openai/gpt-oss-20b',

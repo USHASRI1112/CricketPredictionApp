@@ -145,6 +145,7 @@ send alerts to its real topic subscribers.
    - `CRIC_API_KEY`: the new working Cric API key.
    - `GROQ_API_KEY`: your existing Groq key (previously in `FUNCTIONS_CONFIG_EXPORT.groq.key`).
    - `GROQ_MODEL`: optional model ID; defaults to `openai/gpt-oss-20b`. Choose a model available to your Groq account.
+   - `GROQ_REASONING_EFFORT`: `low` (default), `medium`, or `high`; sent only to GPT-OSS models. Lower effort and 70–100 word reasons reduce generation work.
    - `GOOGLE_CLOUD_PROJECT`: `cricket-prediction-app-a0f1c`.
    - `FIREBASE_SERVICE_ACCOUNT_JSON`: the complete service-account JSON as one value.
    - `SCHEDULER_ENABLED`: initially `false`, until cutover is complete.

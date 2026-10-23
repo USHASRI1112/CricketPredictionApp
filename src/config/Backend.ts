@@ -1,5 +1,5 @@
 // Set the production URL to the new Voroa HTTPS URL before building a release AAB.
-const PRODUCTION_BACKEND_URL = '';
+const PRODUCTION_BACKEND_URL = 'https://cricket-prediction-backend.getvoroa.com/';
 
 // Android emulator/USB device: run `adb reverse tcp:3000 tcp:3000` first.
 // iOS Simulator can reach this localhost address directly.
