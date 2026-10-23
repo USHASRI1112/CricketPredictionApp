@@ -775,7 +775,7 @@ export default function MatchScreen() {
   const flipRight = useRef(new Animated.Value(0)).current;
   const pageFade = useRef(new Animated.Value(0)).current;
   const pageSlide = useRef(new Animated.Value(40)).current;
-  const predFade = useRef(new Animated.Value(0)).current;
+  const predFade = useRef(new Animated.Value(1)).current;
   const predScale = useRef(new Animated.Value(0.92)).current;
 
   useEffect(() => {
@@ -795,6 +795,9 @@ export default function MatchScreen() {
 
 
   const loadPrediction = useCallback(async () => {
+    setLoading(true);
+    predFade.setValue(1);
+    predScale.setValue(1);
     try {
       setError(null);
       const result = await fetchPrediction(match);
@@ -802,12 +805,14 @@ export default function MatchScreen() {
       setPredictionLocked(false); // ← unlock only when data is ready
       animatePredCard();
     } catch (err) {
+      predFade.setValue(1);
+      predScale.setValue(1);
       setError(err instanceof Error ? err.message : 'Failed to load prediction');
       setPredictionLocked(false); // ← also unlock on error so error shows
     } finally {
       setLoading(false);
     }
-  }, [match, animatePredCard]);
+  }, [match, animatePredCard, predFade, predScale]);
 
 
   const handleGetPrediction = () => {

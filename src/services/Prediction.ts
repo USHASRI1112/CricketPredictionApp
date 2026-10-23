@@ -23,6 +23,8 @@ export interface PredictionResponse {
 export const fetchPrediction = async (
   match: Match,
 ): Promise<PredictionResponse> => {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 30000);
   try {
     // console.log("fetching prediction for match", match);
     let scoreText = '';
@@ -46,6 +48,7 @@ export const fetchPrediction = async (
 
     const response = await fetch(CricketApiEndpoints.PREDICT(), {
       method: 'POST',
+      signal: controller.signal,
       headers: {
         'Content-Type': 'application/json',
         Accept: 'application/json',
@@ -56,12 +59,23 @@ export const fetchPrediction = async (
     if (!response.ok) {
       throw new Error('Prediction request failed');
     }
-    const prediction = (await response.json()) as {
-      result: PredictionResponse;
-    };
-    return prediction.result;
+    const payload: unknown = await response.json();
+    const result = payload && typeof payload === 'object' && 'result' in payload
+      ? (payload as { result: unknown }).result : null;
+    if (!result || typeof result !== 'object' ||
+        !('winner' in result) || typeof result.winner !== 'string' || !result.winner.trim() ||
+        !('reason' in result) || typeof result.reason !== 'string' || !result.reason.trim() ||
+        !('confidence' in result) || typeof result.confidence !== 'string' ||
+        !['Low', 'Medium', 'High', 'Actual'].includes(result.confidence)) {
+      throw new Error('Invalid prediction response');
+    }
+    return result as PredictionResponse;
   } catch (error) {
     console.error('Error fetching prediction:', error);
-    throw new Error('Failed to get prediction. Please try again.');
+    throw new Error(controller.signal.aborted
+      ? 'Prediction took too long. Please try again.'
+      : 'Failed to get prediction. Please try again.');
+  } finally {
+    clearTimeout(timeout);
   }
 };

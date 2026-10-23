@@ -120,7 +120,10 @@ function RewardAdd(_: any, ref: any) {
         pendingShowRef.current = false;
         clearFallbackTimer();
         try {
-          ad.show();
+          void ad.show().catch(() => {
+            loadedRef.current = false;
+            drainCallbacks();
+          });
         } catch {
           drainCallbacks();
         }
@@ -148,7 +151,10 @@ function RewardAdd(_: any, ref: any) {
           pendingShowRef.current = false;
           clearFallbackTimer();
           try {
-            ad.show();
+            void ad.show().catch(() => {
+            loadedRef.current = false;
+            drainCallbacks();
+          });
           } catch {
             drainCallbacks();
           }
@@ -301,7 +307,10 @@ function Add(_: any, ref: any) {
         pendingShowRef.current = false;
         clearFallbackTimer();
         try {
-          ad.show();
+          void ad.show().catch(() => {
+            loadedRef.current = false;
+            drainCallbacks();
+          });
         } catch {
           drainCallbacks();
         }
@@ -329,7 +338,10 @@ function Add(_: any, ref: any) {
           pendingShowRef.current = false;
           clearFallbackTimer();
           try {
-            ad.show();
+            void ad.show().catch(() => {
+            loadedRef.current = false;
+            drainCallbacks();
+          });
           } catch {
             drainCallbacks();
           }
