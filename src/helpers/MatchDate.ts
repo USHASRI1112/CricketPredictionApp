@@ -1,3 +1,4 @@
+import { parseMatchStart } from './MatchTime';
 import { Match } from '../types';
 
 const pad = (value: number): string => value.toString().padStart(2, '0');
@@ -24,7 +25,8 @@ const toDateKeyFromString = (value?: string): string | null => {
 };
 
 export const getMatchDateKey = (match: Pick<Match, 'date' | 'dateTimeGMT'>): string | null => {
-  return toDateKeyFromString(match.date) ?? toDateKeyFromString(match.dateTimeGMT);
+  const start = parseMatchStart(match.dateTimeGMT);
+  return start ? toLocalDateKey(start) : toDateKeyFromString(match.date);
 };
 
 export const isMatchOnCurrentDate = (

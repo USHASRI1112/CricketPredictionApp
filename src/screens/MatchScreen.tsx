@@ -1,3 +1,4 @@
+import { parseMatchStart } from '../helpers/MatchTime';
 /* eslint-disable react-native/no-inline-styles */
 import React, { useEffect, useState, useCallback, useRef } from 'react';
 import {
@@ -38,8 +39,7 @@ const initials = (name: string) =>
   name.split(' ').map(s => s[0]).slice(0, 2).join('').toUpperCase();
 
 function parseMatchDate(raw: string): Date | null {
-  const d = new Date(raw);
-  return isNaN(d.getTime()) ? null : d;
+  return parseMatchStart(raw);
 }
 
 function formatCountdown(ms: number): { label: string; urgent: boolean } {
@@ -337,7 +337,8 @@ function CountdownRow({ rawDate, delay }: { rawDate: string; delay: number }) {
   }, [delay, fade, slide]);
 
   useEffect(() => {
-    if (!matchDate) { return; }
+    if (!matchDate) { setMs(-1); return; }
+    setMs(matchDate.getTime() - Date.now());
     const tick = setInterval(() => {
       const r = matchDate.getTime() - Date.now();
       setMs(r);
@@ -350,12 +351,12 @@ function CountdownRow({ rawDate, delay }: { rawDate: string; delay: number }) {
     }, 1000);
     return () => clearInterval(tick);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [rawDate]);
 
-  const { label, urgent } = ms >= 0
+  const { label, urgent } = matchDate
     ? formatCountdown(ms)
-    : { label: rawDate, urgent: false };
-  const isStarted = ms <= 0;
+    : { label: 'Time TBC', urgent: false };
+  const isStarted = !!matchDate && ms <= 0;
   const textColor = urgent ? '#ef4444' : isStarted ? '#94a3b8' : '#cbd5e1';
 
   return (
@@ -920,7 +921,7 @@ export default function MatchScreen() {
 
             <View style={styles.infoGrid}>
               <VenueRow venue={match.venue || '—'} delay={300} />
-              <CountdownRow rawDate={match.date || ''} delay={360} />
+              <CountdownRow rawDate={match.dateTimeGMT || ''} delay={360} />
               {match.matchType && <FormatRow format={match.matchType} delay={420} />}
             </View>
           </View>

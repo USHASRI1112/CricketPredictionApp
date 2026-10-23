@@ -1,3 +1,4 @@
+import { formatMatchTime } from '../helpers/MatchTime';
 import React, { useEffect, useRef } from 'react';
 import { View, Text, Image, StyleSheet, TouchableOpacity, Animated } from 'react-native';
 import { Match } from '../types';
@@ -51,13 +52,7 @@ const LiveCard: React.FC<LiveCardProps> = ({
   const { team1Flag, team2Flag } = resolveMatchTeamFlags(match);
 
   // ── Format local time from ISO dateTimeGMT ──────────────────────────
-  const localTime = match.dateTimeGMT
-    ? new Date(match.dateTimeGMT).toLocaleTimeString([], {
-        hour:   '2-digit',
-        minute: '2-digit',
-        hour12: true,
-      })
-    : null;
+  const localTime = formatMatchTime(match.dateTimeGMT);
 
   return (
     <TouchableOpacity style={styles.card} onPress={onPress} activeOpacity={0.85}>

@@ -1,10 +1,11 @@
+import { parseMatchStart } from './MatchTime';
 import { Match } from '../types';
 import { getMatchDateKey, isLiveMatch, toLocalDateKey } from './MatchDate';
 
 const sortByTimestamp = (matches: Match[]): Match[] => {
   return [...matches].sort((a, b) => {
-    const aTime = a.dateTimeGMT ? new Date(a.dateTimeGMT).getTime() : 0;
-    const bTime = b.dateTimeGMT ? new Date(b.dateTimeGMT).getTime() : 0;
+    const aTime = parseMatchStart(a.dateTimeGMT)?.getTime() ?? 0;
+    const bTime = parseMatchStart(b.dateTimeGMT)?.getTime() ?? 0;
     return aTime - bTime;
   });
 };
@@ -31,7 +32,7 @@ export const splitMatches = (
       return;
     }
 
-    const parsedStartTime = Date.parse(match.dateTimeGMT || '');
+    const parsedStartTime = parseMatchStart(match.dateTimeGMT)?.getTime() ?? NaN;
     const hasValidStartTime = Number.isFinite(parsedStartTime);
     const isFutureByTime = hasValidStartTime && parsedStartTime > now;
 

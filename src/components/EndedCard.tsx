@@ -1,3 +1,4 @@
+import { formatMatchTime } from '../helpers/MatchTime';
 /* eslint-disable react-native/no-inline-styles */
 import React from 'react';
 import { View, Text, Image, StyleSheet, TouchableOpacity } from 'react-native';
@@ -19,13 +20,7 @@ const EndedCard: React.FC<EndedCardProps> = ({ match, onPress }) => {
       .toUpperCase();
 
   const { team1Flag, team2Flag } = resolveMatchTeamFlags(match);
-  const localTime = match.dateTimeGMT
-    ? new Date(match.dateTimeGMT).toLocaleTimeString([], {
-        hour: '2-digit',
-        minute: '2-digit',
-        hour12: true,
-      })
-    : null;
+  const localTime = formatMatchTime(match.dateTimeGMT);
 
   const normalize = (value: string) =>
     value.toLowerCase().replace(/[^a-z0-9]/g, '');
