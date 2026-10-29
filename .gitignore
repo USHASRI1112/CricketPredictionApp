@@ -65,7 +65,7 @@ yarn-error.log
 
 # testing
 /coverage
-
+backend/cricket-app-a0f1c-firebase-adminsdk-fbsvc-fddc41308e.json
 # Yarn
 .yarn/*
 !.yarn/patches
