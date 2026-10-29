@@ -5,60 +5,468 @@ import {
   useImperativeHandle,
   useRef,
 } from 'react';
-import { InterstitialAd, AdEventType } from 'react-native-google-mobile-ads';
+import { InterstitialAd, AdEventType,BannerAd, BannerAdSize,NativeAd,
+  NativeAdView,
+  NativeAsset,
+  NativeAssetType,
+  NativeMediaView,AppOpenAd,RewardedAd, RewardedAdEventType, 
+   } from 'react-native-google-mobile-ads';
+import {View,Text, StyleSheet} from 'react-native';
+// Google Test Ad Unit IDs - Replace with production IDs before release
+export const adUnitId = 'ca-app-pub-1800123243044416/3183690432'; // Interstitial
 
-const adUnitId = 'ca-app-pub-3940256099942544/1033173712';
-//   : "YOUR_REAL_INTERSTITIAL_ID";
+const bannerAdUnit = 'ca-app-pub-3940256099942544/6300978111'; // Banner
 
-const interstitial = InterstitialAd.createForAdRequest(adUnitId);
+const nativeAdUnit = 'ca-app-pub-1800123243044416/2509407596'; // Native
 
-function Add(_: any, ref: any) {
-  const [loaded, setLoaded] = useState(false);
+const appOpenUnitId = 'ca-app-pub-3940256099942544/5575463023'; // App Open
+
+const rewardedAdUnit = 'ca-app-pub-1800123243044416/8847080652'; // Rewarded
+
+const appOpenAd = AppOpenAd.createForAdRequest(appOpenUnitId, {
+  requestNonPersonalizedAdsOnly: true,
+});
+
+export function AppOpenAdManager() {
+  const hasShownRef = useRef(false);
+
+  useEffect(() => {
+    const loadedListener = appOpenAd.addAdEventListener(
+      AdEventType.LOADED,
+      () => {
+        if (hasShownRef.current) return; // already shown once, don't show again
+        hasShownRef.current = true;
+        // console.log("App Open Ad Loaded");
+        appOpenAd.show();
+      }
+    );
+
+    const closedListener = appOpenAd.addAdEventListener(
+      AdEventType.CLOSED,
+      () => {
+        // console.log("App Open Ad Closed");
+        // don't reload — we only want it once per app open
+      }
+    );
+
+    appOpenAd.load();
+
+    return () => {
+      loadedListener();
+      closedListener();
+    };
+  }, []);
+
+  return null;
+}
+
+export function HeaderBanner({ mode }: { mode: 'header' | 'footer' }) {
+  return (
+    <View style={{ 
+      paddingTop:    mode === 'header' ? 24 : 0,
+      paddingBottom: mode === 'footer' ? 24 : 0,
+    }}>
+      <BannerAd
+        unitId={bannerAdUnit}
+        size={BannerAdSize.ANCHORED_ADAPTIVE_BANNER}
+        onAdLoaded={() => {/* console.log("Banner loaded") */}}
+        onAdFailedToLoad={(e) => {/* console.log("Banner failed", e) */}}
+      />
+    </View>
+  );
+}
+
+function RewardAdd(_: any, ref: any) {
+  const rewardedRef = useRef<RewardedAd | null>(null);
+  const loadedRef = useRef(false);
   const callbacksRef = useRef<Array<() => void>>([]);
+  const pendingShowRef = useRef(false);
+  const fallbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const clearFallbackTimer = () => {
+    if (fallbackTimerRef.current) {
+      clearTimeout(fallbackTimerRef.current);
+      fallbackTimerRef.current = null;
+    }
+  };
+
+  const drainCallbacks = () => {
+    const cbs = callbacksRef.current.splice(0);
+    cbs.forEach(fn => fn());
+  };
+
+  if (!rewardedRef.current) {
+    rewardedRef.current = RewardedAd.createForAdRequest(rewardedAdUnit, {
+      requestNonPersonalizedAdsOnly: true,
+    });
+  }
 
   useImperativeHandle(ref, () => ({
+    isLoaded() {
+      return loadedRef.current;
+    },
     showAd(cb?: () => void) {
       if (cb) callbacksRef.current.push(cb);
-      if (loaded) {
-        interstitial.show();
+
+      const ad = rewardedRef.current;
+      if (!ad) {
+        pendingShowRef.current = false;
+        clearFallbackTimer();
+        drainCallbacks();
+        return;
+      }
+
+      if (loadedRef.current) {
+        pendingShowRef.current = false;
+        clearFallbackTimer();
+        try {
+          void ad.show().catch(() => {
+            loadedRef.current = false;
+            drainCallbacks();
+          });
+        } catch {
+          drainCallbacks();
+        }
       } else {
-        // if ad not ready, invoke callbacks immediately
-        const cbs = callbacksRef.current.splice(0);
-        cbs.forEach(fn => fn());
+        pendingShowRef.current = true;
+        ad.load();
+
+        clearFallbackTimer();
+        fallbackTimerRef.current = setTimeout(() => {
+          pendingShowRef.current = false;
+          drainCallbacks();
+        }, 2500);
       }
     },
   }));
 
   useEffect(() => {
-    const unsubscribeLoaded = interstitial.addAdEventListener(
-      AdEventType.LOADED,
+    const ad = rewardedRef.current!;
+
+    const unsubscribeLoaded = ad.addAdEventListener(
+      RewardedAdEventType.LOADED,
       () => {
-        setLoaded(true);
-        console.log('Ad Loaded');
+        loadedRef.current = true;
+        if (pendingShowRef.current && callbacksRef.current.length > 0) {
+          pendingShowRef.current = false;
+          clearFallbackTimer();
+          try {
+            void ad.show().catch(() => {
+            loadedRef.current = false;
+            drainCallbacks();
+          });
+          } catch {
+            drainCallbacks();
+          }
+        }
+        // console.log('✅ Rewarded Ad Loaded');
       },
     );
 
-    const unsubscribeClosed = interstitial.addAdEventListener(
+    const unsubscribeEarned = ad.addAdEventListener(
+      RewardedAdEventType.EARNED_REWARD,
+      (reward) => {
+        // console.log('🎁 Reward earned:', reward);
+        // fire callbacks when reward is earned
+        drainCallbacks();
+      },
+    );
+
+    const unsubscribeClosed = ad.addAdEventListener(
       AdEventType.CLOSED,
       () => {
-        setLoaded(false);
-        // call any pending callbacks after ad closed
-        const cbs = callbacksRef.current.splice(0);
-        cbs.forEach(fn => fn());
-        interstitial.load(); // Preload next ad
+        loadedRef.current = false;
+        pendingShowRef.current = false;
+        clearFallbackTimer();
+        drainCallbacks();
+        // console.log('Rewarded Ad Closed');
+        ad.load(); // preload next
       },
     );
 
-    interstitial.load();
+    const unsubscribeError = ad.addAdEventListener(
+      AdEventType.ERROR,
+      (error) => {
+        loadedRef.current = false;
+        pendingShowRef.current = false;
+        clearFallbackTimer();
+        // console.log('❌ Rewarded Ad Error:', error);
+        // fire callbacks on error so user isn't stuck
+        drainCallbacks();
+        ad.load();
+      },
+    );
+
+    ad.load();
 
     return () => {
+      clearFallbackTimer();
       unsubscribeLoaded();
+      unsubscribeEarned();
+      unsubscribeClosed();
+      unsubscribeError();
+    };
+  }, []);
+
+  return null;
+}
+export function NativeAdCard() {
+  const [nativeAd, setNativeAd] = useState<NativeAd | null>(null);
+  const [error, setError] = useState(false);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const loadAd = async () => {
+      try {
+        const ad = await NativeAd.createForAdRequest(nativeAdUnit);
+        if (isMounted) {
+          setNativeAd(ad);
+          setError(false);
+        }
+      } catch (err) {
+        // console.error('Native ad failed to load:', err);
+        if (isMounted) {
+          setError(true);
+          setNativeAd(null);
+        }
+      }
+    };
+
+    loadAd();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  // Don't render anything if ad failed to load
+  if (error || !nativeAd) {
+    return null;
+  }
+
+  return (
+    <View style={styles.nativeContainer}>
+      <NativeAdView nativeAd={nativeAd}>
+        <NativeMediaView style={styles.media} />
+        <View style={styles.textContent}>
+          <Text style={styles.adLabel}>SPONSORED</Text>
+          <NativeAsset assetType={NativeAssetType.HEADLINE}>
+            <Text style={styles.title} />
+          </NativeAsset>
+          <NativeAsset assetType={NativeAssetType.BODY}>
+            <Text style={styles.body} />
+          </NativeAsset>
+          <NativeAsset assetType={NativeAssetType.CALL_TO_ACTION}>
+            <Text style={styles.cta} />
+          </NativeAsset>
+        </View>
+      </NativeAdView>
+    </View>
+  );
+}
+
+
+
+function Add(_: any, ref: any) {
+  const interstitialRef = useRef<InterstitialAd | null>(null);
+  const loadedRef = useRef(false);
+  const callbacksRef = useRef<Array<() => void>>([]);
+  const pendingShowRef = useRef(false);
+  const fallbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const clearFallbackTimer = () => {
+    if (fallbackTimerRef.current) {
+      clearTimeout(fallbackTimerRef.current);
+      fallbackTimerRef.current = null;
+    }
+  };
+
+  const drainCallbacks = () => {
+    const cbs = callbacksRef.current.splice(0);
+    cbs.forEach(fn => fn());
+  };
+
+  if (!interstitialRef.current) {
+    interstitialRef.current = InterstitialAd.createForAdRequest(adUnitId);
+  }
+
+  useImperativeHandle(ref, () => ({
+    showAd(cb?: () => void) {
+      if (cb) callbacksRef.current.push(cb);
+
+      const ad = interstitialRef.current;
+      if (!ad) {
+        pendingShowRef.current = false;
+        clearFallbackTimer();
+        drainCallbacks();
+        return;
+      }
+
+      if (loadedRef.current) {
+        pendingShowRef.current = false;
+        clearFallbackTimer();
+        try {
+          void ad.show().catch(() => {
+            loadedRef.current = false;
+            drainCallbacks();
+          });
+        } catch {
+          drainCallbacks();
+        }
+      } else {
+        pendingShowRef.current = true;
+        ad.load();
+
+        clearFallbackTimer();
+        fallbackTimerRef.current = setTimeout(() => {
+          pendingShowRef.current = false;
+          drainCallbacks();
+        }, 2500);
+      }
+    },
+  }));
+
+  useEffect(() => {
+    const ad = interstitialRef.current!;
+
+    const unsubscribeLoaded = ad.addAdEventListener(
+      AdEventType.LOADED,
+      () => {
+        loadedRef.current = true;
+        if (pendingShowRef.current && callbacksRef.current.length > 0) {
+          pendingShowRef.current = false;
+          clearFallbackTimer();
+          try {
+            void ad.show().catch(() => {
+            loadedRef.current = false;
+            drainCallbacks();
+          });
+          } catch {
+            drainCallbacks();
+          }
+        }
+        // console.log('✅ Ad Loaded');
+      },
+    );
+
+    const unsubscribeError = ad.addAdEventListener(
+      AdEventType.ERROR,
+      () => {
+        loadedRef.current = false;
+        pendingShowRef.current = false;
+        clearFallbackTimer();
+        drainCallbacks();
+        ad.load();
+        // console.log('❌ Ad Error:', error);
+      },
+    );
+
+    const unsubscribeClosed = ad.addAdEventListener(
+      AdEventType.CLOSED,
+      () => {
+        loadedRef.current = false;
+        pendingShowRef.current = false;
+        clearFallbackTimer();
+        drainCallbacks();
+        ad.load();
+      },
+    );
+
+    // Delay ad loading to prevent blocking navigation
+    const loadAdTimeout = setTimeout(() => {
+      ad.load();
+    }, 400); // Load ad 2 seconds after component mounts
+
+    return () => {
+      clearTimeout(loadAdTimeout);
+      clearFallbackTimer();
+      unsubscribeLoaded();
+      unsubscribeError();
       unsubscribeClosed();
     };
-  }, [loaded]);
+  }, []);
 
-  // This component only handles ad logic, no UI needed
   return null;
 }
 
+export const RewardAdd_ = forwardRef(RewardAdd);
+
+
 export default forwardRef(Add);
+
+
+const styles = StyleSheet.create({
+  nativeContainer: {
+    width: '100%',
+    marginVertical: 10,
+    marginHorizontal: 4,
+    backgroundColor: "#1a1a1a", // Dark background to match app theme
+    borderRadius: 12,
+    overflow: "hidden",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 3,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.1)",
+  },
+
+  media: {
+    height: 160,
+    width: "100%",
+  },
+
+  textContent: {
+    padding: 12,
+  },
+
+  adLabel: {
+    fontSize: 10,
+    fontWeight: "800",
+    color: "#888",
+    letterSpacing: 1.5,
+    marginBottom: 6,
+    textTransform: "uppercase",
+  },
+
+  title: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: "#fff", // White text for dark theme
+    lineHeight: 22,
+  },
+
+  body: {
+    fontSize: 13,
+    color: "#ccc", // Light gray for body
+    marginTop: 4,
+    lineHeight: 18,
+  },
+
+  cta: {
+    marginTop: 12,
+    backgroundColor: "#2563eb",
+    paddingVertical: 10,
+    paddingHorizontal: 18,
+    borderRadius: 8,
+    color: "#fff",
+    fontSize: 14,
+    fontWeight: "700",
+    textAlign: "center",
+    overflow: "hidden",
+  },
+
+  adPlaceholder: {
+    height: 200,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: "rgba(255,255,255,0.05)",
+  },
+
+  placeholderText: {
+    color: "#666",
+    fontSize: 13,
+  },
+});
