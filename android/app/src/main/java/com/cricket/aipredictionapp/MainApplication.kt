@@ -1,4 +1,4 @@
-package com.cricketpredictionapp
+package com.cricket.aipredictionapp
 
 import android.app.Application
 import com.facebook.react.PackageList
