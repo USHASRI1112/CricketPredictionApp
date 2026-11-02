@@ -21,7 +21,7 @@ if (!versionCode) {
 if (!/^[1-9]\d*$/.test(versionCode) || Number(versionCode) > 2100000000) {
   throw new Error('Version code must be a positive integer no greater than 2100000000');
 }
-const versionName = process.env.VERSION_NAME?.trim() || '1.0.2';
+const versionName = process.env.VERSION_NAME?.trim() || '1.1.0';
 if (!/^[A-Za-z0-9][A-Za-z0-9.+_-]{0,49}$/.test(versionName)) {
   throw new Error('Provide a version name of 1–50 letters, digits, dots, pluses, hyphens, or underscores');
 }
