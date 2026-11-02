@@ -48,7 +48,7 @@ jobs:
         env:
           BACKEND_URL: ${{ inputs.backend_url || vars.RELEASE_BACKEND_URL || secrets.RELEASE_BACKEND_URL }}
           VERSION_CODE: ${{ inputs.version_code || vars.RELEASE_VERSION_CODE || secrets.RELEASE_VERSION_CODE }}
-          VERSION_NAME: ${{ inputs.version_name || vars.RELEASE_VERSION_NAME || secrets.RELEASE_VERSION_NAME || '1.0.2' }}
+          VERSION_NAME: ${{ inputs.version_name || vars.RELEASE_VERSION_NAME || secrets.RELEASE_VERSION_NAME || '1.1.0' }}
         run: |
           node .github/scripts/configure-android-release.cjs
 
