@@ -34,3 +34,24 @@ describe('MatchDate helpers', () => {
     expect(isMatchInRecentDays({ date: '2026-04-01', dateTimeGMT: '' }, 5, now)).toBe(false);
   });
 });
+
+describe('clock-based live status', () => {
+  const start = new Date('2026-10-31T14:00:00Z');
+  const base = { status: 'Match not started', matchStarted: false, matchEnded: false, matchType: 't20', dateTimeGMT: '2026-10-31T14:00:00' };
+  afterEach(() => jest.useRealTimers());
+  const at = (ms: number) => jest.useFakeTimers().setSystemTime(new Date(start.getTime() + ms));
+
+  it('turns live at toss time, 30 minutes before start', () => {
+    at(-31 * 60000);
+    expect(isLiveMatch(base)).toBe(false);
+    at(-30 * 60000);
+    expect(isLiveMatch(base)).toBe(true);
+  });
+
+  it('stops assuming live after the format\'s longest duration, and never overrides "ended"', () => {
+    at(6 * 3600000);
+    expect(isLiveMatch(base)).toBe(false);
+    at(60 * 60000);
+    expect(isLiveMatch({ ...base, matchEnded: true })).toBe(false);
+  });
+});

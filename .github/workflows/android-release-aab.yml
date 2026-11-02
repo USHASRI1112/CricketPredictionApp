@@ -100,6 +100,7 @@ jobs:
           MYAPP_UPLOAD_KEY_PASSWORD: ${{ secrets.ANDROID_UPLOAD_KEY_PASSWORD }}
           ORG_GRADLE_PROJECT_APP_VERSION_CODE: ${{ env.RELEASE_VERSION_CODE }}
           ORG_GRADLE_PROJECT_APP_VERSION_NAME: ${{ env.RELEASE_VERSION_NAME }}
+          ADMOB_APP_ID: ${{ vars.ADMOB_APP_ID || secrets.ADMOB_APP_ID }}
         run: bash ./gradlew :app:assembleRelease :app:bundleRelease --no-daemon --max-workers=2
 
       - name: Verify release signatures

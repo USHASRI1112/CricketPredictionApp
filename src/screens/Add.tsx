@@ -12,40 +12,40 @@ import { InterstitialAd, AdEventType,BannerAd, BannerAdSize,NativeAd,
   NativeMediaView,AppOpenAd,RewardedAd, RewardedAdEventType, 
    } from 'react-native-google-mobile-ads';
 import {View,Text, StyleSheet} from 'react-native';
-// Google Test Ad Unit IDs - Replace with production IDs before release
-export const adUnitId = 'ca-app-pub-1800123243044416/3183690432'; // Interstitial
+import {
+  AD_UNITS,
+  canShowAppOpen,
+  canShowInterstitial,
+  markAppOpenShown,
+  markInterstitialShown,
+  markRewardedShown,
+} from '../ads/AdConfig';
+import { initializeAds } from '../ads/AdsInit';
 
-const bannerAdUnit = 'ca-app-pub-3940256099942544/6300978111'; // Banner
-
-const nativeAdUnit = 'ca-app-pub-1800123243044416/2509407596'; // Native
-
-const appOpenUnitId = 'ca-app-pub-3940256099942544/5575463023'; // App Open
-
-const rewardedAdUnit = 'ca-app-pub-1800123243044416/8847080652'; // Rewarded
-
-const appOpenAd = AppOpenAd.createForAdRequest(appOpenUnitId, {
-  requestNonPersonalizedAdsOnly: true,
-});
+// True once consent is resolved and the SDK may request ads.
+function useAdsReady(): boolean {
+  const [ready, setReady] = useState(false);
+  useEffect(() => {
+    let isMounted = true;
+    initializeAds().then(ok => { if (isMounted) setReady(ok); });
+    return () => { isMounted = false; };
+  }, []);
+  return ready;
+}
 
 export function AppOpenAdManager() {
-  const hasShownRef = useRef(false);
+  const ready = useAdsReady();
 
   useEffect(() => {
+    if (!ready || !AD_UNITS.appOpen || !canShowAppOpen()) return;
+    const appOpenAd = AppOpenAd.createForAdRequest(AD_UNITS.appOpen);
+
     const loadedListener = appOpenAd.addAdEventListener(
       AdEventType.LOADED,
       () => {
-        if (hasShownRef.current) return; // already shown once, don't show again
-        hasShownRef.current = true;
-        // console.log("App Open Ad Loaded");
+        if (!canShowAppOpen()) return; // only once per app session
+        markAppOpenShown();
         appOpenAd.show();
-      }
-    );
-
-    const closedListener = appOpenAd.addAdEventListener(
-      AdEventType.CLOSED,
-      () => {
-        // console.log("App Open Ad Closed");
-        // don't reload — we only want it once per app open
       }
     );
 
@@ -53,21 +53,22 @@ export function AppOpenAdManager() {
 
     return () => {
       loadedListener();
-      closedListener();
     };
-  }, []);
+  }, [ready]);
 
   return null;
 }
 
 export function HeaderBanner({ mode }: { mode: 'header' | 'footer' }) {
+  const ready = useAdsReady();
+  if (!ready || !AD_UNITS.banner) return null;
   return (
     <View style={{ 
       paddingTop:    mode === 'header' ? 24 : 0,
       paddingBottom: mode === 'footer' ? 24 : 0,
     }}>
       <BannerAd
-        unitId={bannerAdUnit}
+        unitId={AD_UNITS.banner}
         size={BannerAdSize.ANCHORED_ADAPTIVE_BANNER}
         onAdLoaded={() => {/* console.log("Banner loaded") */}}
         onAdFailedToLoad={(e) => {/* console.log("Banner failed", e) */}}
@@ -95,10 +96,10 @@ function RewardAdd(_: any, ref: any) {
     cbs.forEach(fn => fn());
   };
 
+  const readyRef = useRef(false);
+
   if (!rewardedRef.current) {
-    rewardedRef.current = RewardedAd.createForAdRequest(rewardedAdUnit, {
-      requestNonPersonalizedAdsOnly: true,
-    });
+    rewardedRef.current = RewardedAd.createForAdRequest(AD_UNITS.rewarded);
   }
 
   useImperativeHandle(ref, () => ({
@@ -109,7 +110,7 @@ function RewardAdd(_: any, ref: any) {
       if (cb) callbacksRef.current.push(cb);
 
       const ad = rewardedRef.current;
-      if (!ad) {
+      if (!ad || !readyRef.current) {
         pendingShowRef.current = false;
         clearFallbackTimer();
         drainCallbacks();
@@ -119,6 +120,7 @@ function RewardAdd(_: any, ref: any) {
       if (loadedRef.current) {
         pendingShowRef.current = false;
         clearFallbackTimer();
+        markRewardedShown();
         try {
           void ad.show().catch(() => {
             loadedRef.current = false;
@@ -150,6 +152,7 @@ function RewardAdd(_: any, ref: any) {
         if (pendingShowRef.current && callbacksRef.current.length > 0) {
           pendingShowRef.current = false;
           clearFallbackTimer();
+          markRewardedShown();
           try {
             void ad.show().catch(() => {
             loadedRef.current = false;
@@ -197,9 +200,15 @@ function RewardAdd(_: any, ref: any) {
       },
     );
 
-    ad.load();
+    let isMounted = true;
+    initializeAds().then(ok => {
+      if (!isMounted || !ok) return;
+      readyRef.current = true;
+      ad.load();
+    });
 
     return () => {
+      isMounted = false;
       clearFallbackTimer();
       unsubscribeLoaded();
       unsubscribeEarned();
@@ -219,7 +228,11 @@ export function NativeAdCard() {
 
     const loadAd = async () => {
       try {
-        const ad = await NativeAd.createForAdRequest(nativeAdUnit);
+        if (!AD_UNITS.native || !(await initializeAds())) {
+          if (isMounted) setError(true);
+          return;
+        }
+        const ad = await NativeAd.createForAdRequest(AD_UNITS.native);
         if (isMounted) {
           setNativeAd(ad);
           setError(false);
@@ -287,8 +300,10 @@ function Add(_: any, ref: any) {
     cbs.forEach(fn => fn());
   };
 
+  const readyRef = useRef(false);
+
   if (!interstitialRef.current) {
-    interstitialRef.current = InterstitialAd.createForAdRequest(adUnitId);
+    interstitialRef.current = InterstitialAd.createForAdRequest(AD_UNITS.interstitial);
   }
 
   useImperativeHandle(ref, () => ({
@@ -296,7 +311,8 @@ function Add(_: any, ref: any) {
       if (cb) callbacksRef.current.push(cb);
 
       const ad = interstitialRef.current;
-      if (!ad) {
+      // Frequency cap: skip the ad and continue straight to the action.
+      if (!ad || !readyRef.current || !canShowInterstitial()) {
         pendingShowRef.current = false;
         clearFallbackTimer();
         drainCallbacks();
@@ -306,6 +322,7 @@ function Add(_: any, ref: any) {
       if (loadedRef.current) {
         pendingShowRef.current = false;
         clearFallbackTimer();
+        markInterstitialShown();
         try {
           void ad.show().catch(() => {
             loadedRef.current = false;
@@ -337,6 +354,7 @@ function Add(_: any, ref: any) {
         if (pendingShowRef.current && callbacksRef.current.length > 0) {
           pendingShowRef.current = false;
           clearFallbackTimer();
+          markInterstitialShown();
           try {
             void ad.show().catch(() => {
             loadedRef.current = false;
@@ -374,11 +392,17 @@ function Add(_: any, ref: any) {
     );
 
     // Delay ad loading to prevent blocking navigation
+    let isMounted = true;
     const loadAdTimeout = setTimeout(() => {
-      ad.load();
-    }, 400); // Load ad 2 seconds after component mounts
+      initializeAds().then(ok => {
+        if (!isMounted || !ok) return;
+        readyRef.current = true;
+        ad.load();
+      });
+    }, 400);
 
     return () => {
+      isMounted = false;
       clearTimeout(loadAdTimeout);
       clearFallbackTimer();
       unsubscribeLoaded();

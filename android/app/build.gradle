@@ -78,6 +78,15 @@ android {
     buildToolsVersion = rootProject.ext.buildToolsVersion
     compileSdk = rootProject.ext.compileSdkVersion
 
+    // Real AdMob App ID (AdMob → Apps → App settings), e.g. ca-app-pub-1800123243044416~XXXXXXXXXX
+    def releaseAdmobAppId = System.getenv("ADMOB_APP_ID") ?: findProperty("ADMOB_APP_ID")
+    gradle.taskGraph.whenReady { graph ->
+        def buildsRelease = graph.allTasks.any { it.project == project && it.name.toLowerCase().contains("release") }
+        if (buildsRelease && !(releaseAdmobAppId && releaseAdmobAppId.toString() ==~ /ca-app-pub-\d+~\d+/)) {
+            throw new GradleException("Set ADMOB_APP_ID (ca-app-pub-...~...) to build a release; without it ads earn nothing.")
+        }
+    }
+
     namespace "com.cricket.aipredictionapp"
     defaultConfig {
         applicationId ="com.cricket.aipredictionapp"
@@ -106,9 +115,12 @@ android {
     buildTypes {
         debug {
             signingConfig signingConfigs.debug
+            // Google's sample AdMob App ID; debug JS uses TestIds ad units.
+            manifestPlaceholders = [admobAppId: "ca-app-pub-3940256099942544~3347511713"]
         }
         release {
             signingConfig signingConfigs.release
+            manifestPlaceholders = [admobAppId: releaseAdmobAppId ?: ""]
             minifyEnabled enableProguardInReleaseBuilds
             proguardFiles getDefaultProguardFile("proguard-android.txt"), "proguard-rules.pro"
         }

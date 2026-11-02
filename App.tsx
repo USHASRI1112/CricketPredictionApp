@@ -13,27 +13,31 @@ import {
   AppState,
   AppStateStatus,
 } from 'react-native';
-import { MobileAds } from 'react-native-google-mobile-ads';
+import { initializeAds } from './src/ads/AdsInit';
+import { suppressInterstitials } from './src/ads/AdConfig';
 import { ALL_MATCHES_QUERY_KEY } from './src/constants/QueryKeys';
 import { getMatchesFromStorage } from './src/helpers/GetMatchesFromStorage';
 import { shouldRefetchMatches } from './src/helpers/ShouldRefetchMatches';
 import AllMatchesScreen from './src/screens/AllMatchesScreen';
 import HomeScreen from './src/screens/HomeScreen';
 import MatchScreen from './src/screens/MatchScreen';
+import NotificationSettingsScreen from './src/screens/NotificationSettingsScreen';
+import MatchCenterScreen, { MatchCenterTab } from './src/screens/MatchCenterScreen';
 import { fetchMatches } from './src/services/Matches';
 import SplashScreen from './src/screens/SplashScreen';
 import { Match } from './src/types';
 import {
   ensureAndroidNotificationPermission,
   initPushNotifications,
-  subscribeToTopicHandler,
   onForegroundNotification,
   onNotificationTap,
-  TOPICS,
   createNotificationChannel,
   showForegroundNotification,
 } from './src/services/PushNotifications';
-import { recordUserActivity } from './src/services/UserActivity';
+import { applyNotificationPrefs, loadNotificationPrefs } from './src/services/NotificationPrefs';
+
+// No interstitials right after a notification tap.
+const NOTIFICATION_AD_GRACE_MS = 3 * 60 * 1000;
 
 export type RootStackParamList = {
   Home: undefined;
@@ -43,6 +47,8 @@ export type RootStackParamList = {
   } | undefined;
   Match: { matchId: string; match: Match };
   Splash: undefined;
+  NotificationSettings: undefined;
+  MatchCenter: { match: Match; tab?: MatchCenterTab };
 };
 
 const Stack       = createNativeStackNavigator<RootStackParamList>();
@@ -126,7 +132,7 @@ function resolveToastType(title: string, data: Record<string, string>): ToastDat
     if (data.type === 'india')      return 'india';
     if (data.type === 'ipl')        return 'ipl';
     if (data.type === 'live')       return 'live';
-    if (data.type === 'prediction') return 'prediction';
+    if (data.type === 'prediction' || data.type === 'prediction_ready') return 'prediction';
   }
   const t = title.toLowerCase();
   if (t.includes('india') || t.includes('ind')) return 'india';
@@ -156,25 +162,14 @@ export default function App() {
   const navigationRef = useRef<NavigationContainerRef<RootStackParamList>>(null);
   const [toast, setToast] = useState<ToastData | null>(null);
 
-  // ── Initialize AdMob ──────────────────────────────────────────────────
+  // ── Initialize AdMob (after the consent form, where required) ─────────
   useEffect(() => {
-    MobileAds().initialize();
+    void initializeAds();
   }, []);
 
-  // ── Record user activity on open + foreground ─────────────────────────
-  useEffect(() => {
-    recordUserActivity();
-
-    const sub = AppState.addEventListener('change', (state: AppStateStatus) => {
-      if (state === 'active') {
-        recordUserActivity();
-      }
-    });
-
-    return () => sub.remove();
-  }, []);
-
-  // ── Startup fetch + periodic refetch ─────────────────────────────────
+  // ── Startup fetch + periodic/foreground refetch ──────────────────────
+  // Requests to /matches also tell the backend users are active, so it
+  // refreshes scores faster while people are in the app.
   useEffect(() => {
     const startupFetch = async () => {
       try {
@@ -204,10 +199,19 @@ export default function App() {
     
     startupFetch();
     
-    // Periodic refetch every 5 minutes
-    const interval = setInterval(checkRefetch, 5 * 60 * 1000);
-    
-    return () => clearInterval(interval);
+    // Check every minute (fetches when the copy is >2 min old) so ended
+    // matches show up within a couple of minutes; also on return to foreground.
+    const interval = setInterval(checkRefetch, 60 * 1000);
+    const sub = AppState.addEventListener('change', (state: AppStateStatus) => {
+      if (state === 'active') {
+        void checkRefetch();
+      }
+    });
+
+    return () => {
+      clearInterval(interval);
+      sub.remove();
+    };
   }, []);
 
   // ── Push notifications ────────────────────────────────────────────────
@@ -225,10 +229,8 @@ export default function App() {
           return;
         }
 
-        await subscribeToTopicHandler(TOPICS.INDIA_MATCHES);
-        await subscribeToTopicHandler(TOPICS.IPL_MATCHES);
-        await subscribeToTopicHandler(TOPICS.LIVE_MATCHES);
-        await subscribeToTopicHandler(TOPICS.PREDICTIONS);
+        // Topics the user turned on in Notification settings
+        await applyNotificationPrefs(await loadNotificationPrefs());
 
         unsubscribeForeground = onForegroundNotification((title, body, data) => {
           // console.log('[FCM] Foreground → showing toast:', title, body);
@@ -238,6 +240,7 @@ export default function App() {
 
         unsubscribeTap = onNotificationTap((data) => {
           if (!data) { return; }
+          suppressInterstitials(NOTIFICATION_AD_GRACE_MS);
           if (data.screen === 'Match' && data.matchId) {
             const cached = queryClient.getQueryData<Match[]>(ALL_MATCHES_QUERY_KEY);
             const match  = cached?.find(m => m.id === data.matchId);
@@ -295,6 +298,16 @@ export default function App() {
               name="Match"
               component={MatchScreen}
               options={{ title: 'Match Prediction' }}
+            />
+            <Stack.Screen
+              name="NotificationSettings"
+              component={NotificationSettingsScreen}
+              options={{ title: 'Notifications' }}
+            />
+            <Stack.Screen
+              name="MatchCenter"
+              component={MatchCenterScreen}
+              options={{ title: 'Match Center' }}
             />
           </Stack.Navigator>
         </NavigationContainer>

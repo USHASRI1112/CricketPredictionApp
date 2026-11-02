@@ -1212,6 +1212,16 @@ export default function HomeScreen() {
             <View>
               <Text style={styles.headerEyebrow}>CRICKET PREDICTOR</Text>
               <View style={styles.headerDivider} />
+              <TouchableOpacity
+                style={[styles.headerBadge, styles.alertsButton]}
+                onPress={() => navigation.navigate('NotificationSettings')}
+                activeOpacity={0.8}
+                accessibilityRole="button"
+                accessibilityLabel="Notification settings"
+              >
+                <Text>🔔</Text>
+                <Text style={styles.headerBadgeText}>ALERTS</Text>
+              </TouchableOpacity>
             </View>
             <View style={[styles.videoBadgeWrap, styles.headerVideoWrap]} pointerEvents="none">
               <Image
@@ -1371,6 +1381,7 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: C.cyanMid,
   },
   headerBadgeText: { color: C.cyan, fontSize: 10, fontWeight: '800', letterSpacing: 2, marginLeft: 4 },
+  alertsButton: { alignSelf: 'flex-start', marginTop: 12 },
 
   hero: { paddingHorizontal: 20, paddingTop: 12, paddingBottom: 28 },
   heroAccentLine: { width: 36, height: 3, backgroundColor: C.gold, borderRadius: 2, marginBottom: 16 },

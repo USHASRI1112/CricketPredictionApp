@@ -14,7 +14,8 @@ import {
   Linking,
   Easing,
 } from 'react-native';
-import { useRoute, RouteProp } from '@react-navigation/native';
+import { useRoute, RouteProp, useNavigation } from '@react-navigation/native';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../../App';
 import { fetchPrediction, PredictionResponse } from '../services/Prediction';
 import { resolveMatchTeamFlags } from '../services/Flags';
@@ -682,6 +683,7 @@ function IdleBobTeam({ flag, name, label, color, entranceDelay, bobDelay, onDoub
 
 export default function MatchScreen() {
   const route = useRoute<MatchScreenRouteProp>();
+  const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const [match, setMatch] = useState<Match>(route.params.match);
   const matchId = route.params.matchId || route.params.match?.id;
 
@@ -926,6 +928,24 @@ export default function MatchScreen() {
             </View>
           </View>
 
+          {/* ── Match Center ───────────────────────────────── */}
+          <View style={styles.centerRow}>
+            <TouchableOpacity
+              style={styles.centerBtn}
+              activeOpacity={0.8}
+              onPress={() => navigation.navigate('MatchCenter', { match, tab: 'squads' })}
+            >
+              <Text style={styles.centerBtnText}>👥 SQUADS</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.centerBtn}
+              activeOpacity={0.8}
+              onPress={() => navigation.navigate('MatchCenter', { match, tab: 'scorecard' })}
+            >
+              <Text style={styles.centerBtnText}>📊 SCORECARD</Text>
+            </TouchableOpacity>
+          </View>
+
           {/* ── Fan Poll ───────────────────────────────────── */}
           {/* <PollCard
             match = {match}
@@ -1077,6 +1097,12 @@ const styles = StyleSheet.create({
   matchCardHeader: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20,
   },
+  centerRow: { flexDirection: 'row', gap: 10, marginBottom: 16 },
+  centerBtn: {
+    flex: 1, alignItems: 'center', paddingVertical: 13, borderRadius: 16,
+    backgroundColor: CARD_BG, borderWidth: 1, borderColor: CARD_BORDER,
+  },
+  centerBtnText: { color: '#FFFFFF', fontSize: 12, fontWeight: '800', letterSpacing: 1.5 },
   matchBadge: {
     backgroundColor: 'rgba(245,158,11,0.15)', borderRadius: 20,
     paddingHorizontal: 14, paddingVertical: 6,

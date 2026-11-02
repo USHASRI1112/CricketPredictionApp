@@ -1,4 +1,5 @@
 import { parseMatchStart } from './MatchTime';
+import { isClockLive } from './MatchTiming';
 import { Match } from '../types';
 
 const pad = (value: number): string => value.toString().padStart(2, '0');
@@ -65,13 +66,16 @@ export const isMatchInRecentDays = (
   return matchDate >= windowStart && matchDate <= todayStart;
 };
 
+// Live from toss time by the clock, so the app doesn't wait for the next
+// CricAPI refresh; "ended" still comes from CricAPI (checked every ~2 min).
 export const isLiveMatch = (
-  match: Pick<Match, 'status' | 'matchStarted' | 'matchEnded'>,
+  match: Pick<Match, 'status' | 'matchStarted' | 'matchEnded'> & Partial<Pick<Match, 'dateTimeGMT' | 'matchType'>>,
 ): boolean => {
   const status = (match.status || '').toLowerCase();
   return !match.matchEnded && (
     status.includes('live') ||
     status.includes('progress') ||
-    !!match.matchStarted
+    !!match.matchStarted ||
+    isClockLive(match.dateTimeGMT, match.matchType)
   );
 };

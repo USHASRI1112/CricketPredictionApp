@@ -4,7 +4,7 @@ const PRODUCTION_BACKEND_URL = 'https://cricket-prediction-backend.getvoroa.com/
 // Android emulator/USB device: run `adb reverse tcp:3000 tcp:3000` first.
 // iOS Simulator can reach this localhost address directly.
 export const BACKEND_BASE_URL = __DEV__
-  ? 'http://127.0.0.1:3000'
+  ? 'http://localhost:3000'
   : PRODUCTION_BACKEND_URL;
 
 export function backendUrl(path: string): string {
