@@ -1,7 +1,11 @@
 import * as admin from 'firebase-admin';
 import { randomUUID } from 'node:crypto';
-import { cricketMaster, getCricApiKey, predictMatch } from './cricket';
+import {
+  cricketMaster, firestorePredictionStore, getCricApiKey, getMatchDetail, getMatchesSnapshot, getSquadSummary,
+  predictMatch, recordActivity,
+} from './cricket';
 import { createApiServer } from './http';
+import { createCachedPredictor } from './predictionCache';
 import { startScheduler } from './scheduler';
 import { logger } from './logger';
 
@@ -10,6 +14,16 @@ getCricApiKey();
 if (!process.env.GROQ_API_KEY?.trim()) throw new Error('GROQ_API_KEY is not configured');
 const port = Number(process.env.PORT || 3000);
 if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error('Invalid PORT');
+// On a cache miss, add the match squads (cached, ~1 hit per match) so the AI can name players.
+const predict = createCachedPredictor(
+  async data => predictMatch({ ...data, squads: await getSquadSummary(data.matchId) }),
+  firestorePredictionStore,
+);
+
+// AdMob verifies this file at the root of the website listed on the Play Store.
+const admobPublisherId = process.env.ADMOB_PUBLISHER_ID?.trim() || 'pub-1800123243044416';
+const appAdsTxt = `google.com, ${admobPublisherId}, DIRECT, f08c47fec0942fa0\n`;
+const legacyCricApiKey = process.env.LEGACY_CRIC_API_KEY?.trim();
 
 async function scheduledTick(): Promise<void> {
   const ref = admin.firestore().collection('backend_runtime').doc('cricket_master');
@@ -22,7 +36,7 @@ async function scheduledTick(): Promise<void> {
   });
   if (!acquired) return;
   try {
-    await cricketMaster();
+    await cricketMaster(predict);
   } finally {
     await admin.firestore().runTransaction(async transaction => {
       const snapshot = await transaction.get(ref);
@@ -31,7 +45,16 @@ async function scheduledTick(): Promise<void> {
   }
 }
 
-const server = createApiServer({ getKey: getCricApiKey, predict: predictMatch });
+const server = createApiServer({
+  // Old app versions call CricAPI directly with this key. Give them a separate
+  // (free) key so they can't spend the backend's paid quota; unset it once they're gone.
+  getKey: legacyCricApiKey ? () => legacyCricApiKey : undefined,
+  predict,
+  getMatches: getMatchesSnapshot,
+  getMatchDetail,
+  onActivity: recordActivity,
+  appAdsTxt,
+});
 server.requestTimeout = 30000;
 server.headersTimeout = 15000;
 const stopScheduler = process.env.SCHEDULER_ENABLED === 'false'

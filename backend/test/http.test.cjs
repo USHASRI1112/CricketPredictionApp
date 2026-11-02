@@ -70,13 +70,64 @@ test('redacts dependency failures and handles missing configuration', async () =
   });
 });
 
-test('caps prediction requests before invoking the AI', async () => {
-  let calls = 0;
-  await withServer({ getKey: () => 'key', predict: async () => { calls++; return {}; } }, async url => {
-    for (let i = 0; i < 30; i++) {
-      assert.equal((await fetch(url + '/predictMatch', post({ data: match }))).status, 200);
-    }
-    assert.equal((await fetch(url + '/predictMatch', post({ data: match }))).status, 429);
-    assert.equal(calls, 30);
+test('maps the predictor rate limit to 429 without leaking details', async () => {
+  const { PredictionRateLimitedError } = require('../lib/predictionCache');
+  await withServer({ predict: async () => { throw new PredictionRateLimitedError('busy'); } }, async url => {
+    const response = await fetch(url + '/predictMatch', post({ data: match }));
+    assert.equal(response.status, 429);
+    assert.doesNotMatch(await response.text(), /busy/);
+  });
+});
+
+test('serves the shared matches snapshot gzipped and records activity', async () => {
+  let activity = 0;
+  let snapshot = { matches: [{ id: 'm1' }], updatedAt: 1 };
+  await withServer({ predict: async () => ({}), getMatches: async () => snapshot, onActivity: () => { activity++; } }, async url => {
+    let response = await fetch(url + '/matches');
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get('content-encoding'), 'gzip');
+    assert.equal(response.headers.get('cache-control'), 'public, max-age=60');
+    assert.deepEqual(await response.json(), snapshot);
+    snapshot = { matches: [{ id: 'm2' }], updatedAt: 2 };
+    response = await fetch(url + '/matches', { headers: { 'accept-encoding': 'identity' } });
+    assert.equal(response.headers.get('content-encoding'), null);
+    assert.deepEqual(await response.json(), snapshot);
+    assert.equal(activity, 2);
+  });
+  await withServer({ predict: async () => ({}), getMatches: async () => { throw Error('firestore down'); } }, async url => {
+    const response = await fetch(url + '/matches');
+    assert.equal(response.status, 503);
+    assert.doesNotMatch(await response.text(), /firestore/);
+  });
+});
+
+test('serves app-ads.txt and can disable the legacy key endpoint', async () => {
+  const appAdsTxt = 'google.com, pub-1, DIRECT, f08c47fec0942fa0\n';
+  await withServer({ predict: async () => ({}), appAdsTxt }, async url => {
+    const response = await fetch(url + '/app-ads.txt');
+    assert.match(response.headers.get('content-type'), /text\/plain/);
+    assert.equal(await response.text(), appAdsTxt);
+    assert.equal((await fetch(url + '/config/cric-api')).status, 404);
+  });
+});
+
+test('serves cached scorecards and squads; unavailable maps to 404', async () => {
+  const { MatchDetailUnavailableError } = require('../lib/errors');
+  const calls = [];
+  const getMatchDetail = async (kind, id) => {
+    calls.push(`${kind}:${id}`);
+    if (id === 'none') throw new MatchDetailUnavailableError('no data');
+    if (id === 'down') throw Error('cricapi timeout');
+    return { kind };
+  };
+  await withServer({ predict: async () => ({}), getMatchDetail }, async url => {
+    assert.deepEqual(await (await fetch(url + '/matches/abc-123/scorecard')).json(), { data: { kind: 'scorecard' } });
+    assert.deepEqual(await (await fetch(url + '/matches/abc-123/squad')).json(), { data: { kind: 'squad' } });
+    assert.equal((await fetch(url + '/matches/none/squad')).status, 404);
+    const down = await fetch(url + '/matches/down/scorecard');
+    assert.equal(down.status, 503);
+    assert.doesNotMatch(await down.text(), /cricapi/);
+    assert.equal((await fetch(url + '/matches/..%2F/scorecard')).status, 404);
+    assert.deepEqual(calls, ['scorecard:abc-123', 'squad:abc-123', 'squad:none', 'scorecard:down']);
   });
 });

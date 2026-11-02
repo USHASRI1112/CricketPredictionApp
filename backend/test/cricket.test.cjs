@@ -78,3 +78,49 @@ test('supports explicitly configured GPT-OSS reasoning effort', async () => {
     delete process.env.GROQ_REASONING_EFFORT;
   }
 });
+
+test('snapshot merge lets fresh data win and drops matches older than 4 days', () => {
+  const { mergeMatches } = require('../lib/cricket');
+  const now = Date.UTC(2026, 9, 31, 12);
+  const merged = mergeMatches(
+    [
+      { id: 'a', status: 'Starts at 2pm', dateTimeGMT: '2026-10-31T14:00:00', teamInfo: [{ name: 'India' }] },
+      { id: 'old', status: 'Ended', dateTimeGMT: '2026-10-20T14:00:00' },
+    ],
+    [{ id: 'a', status: 'Live', dateTimeGMT: '2026-10-31T14:00:00' }, { id: 'b', status: 'Upcoming', dateTimeGMT: '2026-11-01T09:00:00' }],
+    now,
+  );
+  assert.deepEqual(merged.map(m => m.id), ['a', 'b']);
+  assert.equal(merged[0].status, 'Live');
+  assert.deepEqual(merged[0].teamInfo, [{ name: 'India' }]);
+});
+
+test('end checks: priority first, one hit each, a sweep when 4+ finish together, within budget', () => {
+  const { planEndChecks } = require('../lib/cricket');
+  const now = Date.UTC(2026, 9, 31, 16);
+  const startedAgo = mins => new Date(now - mins * 60000).toISOString().slice(0, 19);
+  const t20 = (id, teams, extra = {}) => ({ id, name: id, matchType: 't20', teams, dateTimeGMT: startedAgo(170), ...extra });
+  const budget = { now, resetAt: now + 8 * 3600000, hitsUsed: 0, hitsLimit: 2000 };
+  const india = t20('ind', ['India', 'Australia']);
+  const club = t20('club', ['Club A', 'Club B']);
+  const early = { ...t20('early', ['India', 'England']), dateTimeGMT: startedAgo(60) };
+  const ended = t20('done', ['India', 'Sri Lanka'], { matchEnded: true });
+
+  assert.deepEqual(planEndChecks([club, india, early, ended], {}, now, budget), { sweep: false, ids: ['ind', 'club'] });
+  // checked 3 min ago: priority is due again (2 min), others wait (5 min)
+  assert.deepEqual(planEndChecks([club, india], { ind: now - 180000, club: now - 180000 }, now, budget).ids, ['ind']);
+  const many = ['a', 'b', 'c', 'd'].map(id => t20(id, ['X', 'Y']));
+  assert.equal(planEndChecks(many, {}, now, budget).sweep, true);
+  // spending ahead of pace → nothing
+  assert.deepEqual(planEndChecks([india], {}, now, { ...budget, hitsUsed: 1999 }).ids, []);
+});
+
+test('empty squads and scorecards count as not available', () => {
+  const { hasDetailData } = require('../lib/cricket');
+  assert.equal(hasDetailData('squad', []), false);
+  assert.equal(hasDetailData('squad', [{ teamName: 'A', players: [] }]), false);
+  assert.equal(hasDetailData('squad', [{ teamName: 'A', players: [{ name: 'X' }] }]), true);
+  assert.equal(hasDetailData('scorecard', { scorecard: [] }), false);
+  assert.equal(hasDetailData('scorecard', { scorecard: [{ inning: '1' }] }), true);
+  assert.equal(hasDetailData('scorecard', null), false);
+});
