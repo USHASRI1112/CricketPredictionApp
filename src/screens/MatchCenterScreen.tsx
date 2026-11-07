@@ -80,10 +80,7 @@ export default function MatchCenterScreen() {
         {active.isLoading ? (
           <ActivityIndicator color={C.cyan} style={styles.loader} />
         ) : active.error ? (
-          <>
-            <Text style={styles.message}>{(active.error as Error).message}</Text>
-            <NativeAdCard />
-          </>
+          <Text style={styles.message}>{(active.error as Error).message}</Text>
         ) : tab === 'squads' ? (
           <SquadsView teams={squads.data ?? []} />
         ) : (

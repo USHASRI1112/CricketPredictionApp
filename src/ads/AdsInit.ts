@@ -1,4 +1,4 @@
-import { AdsConsent, MobileAds } from 'react-native-google-mobile-ads';
+import { AdsConsent, MaxAdContentRating, MobileAds } from 'react-native-google-mobile-ads';
 
 let readyPromise: Promise<boolean> | null = null;
 
@@ -19,6 +19,8 @@ export function initializeAds(): Promise<boolean> {
         } catch {}
       }
       if (canRequestAds) {
+        // Keep ad content within the app's Play content rating (Play rejected v4 for mismatched ads).
+        await MobileAds().setRequestConfiguration({ maxAdContentRating: MaxAdContentRating.PG });
         await MobileAds().initialize();
       }
       return canRequestAds;

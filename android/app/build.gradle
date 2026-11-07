@@ -92,7 +92,7 @@ android {
         applicationId ="com.cricket.aipredictionapp"
         minSdkVersion = rootProject.ext.minSdkVersion
         targetSdkVersion = rootProject.ext.targetSdkVersion
-        versionCode = (findProperty("APP_VERSION_CODE") ?: "4").toInteger()
+        versionCode = (findProperty("APP_VERSION_CODE") ?: "5").toInteger()
         versionName = findProperty("APP_VERSION_NAME") ?: "1.1.0"
     }
     signingConfigs {
