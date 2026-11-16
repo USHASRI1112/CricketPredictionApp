@@ -27,15 +27,24 @@ test('health check never returns credentials; config is uncached and rotates', a
   });
 });
 
-test('preserves callable-style prediction request and response', async () => {
+test('preserves callable-style prediction response and passes only the match ID', async () => {
   const prediction = { winner: 'India', confidence: 'High', reason: 'Strong bowling' };
   await withServer({ getKey: () => 'key', predict: async data => {
-    assert.deepEqual(data, match);
+    // Client-sent status/score/teams are ignored: they could poison the shared cache.
+    assert.deepEqual(data, { matchId: '123' });
     return prediction;
   } }, async url => {
-    const response = await fetch(url + '/predictMatch', post({ data: match }));
+    const response = await fetch(url + '/predictMatch',
+      post({ data: { ...match, matchEnded: true, status: 'Australia won by 9 runs' } }));
     assert.equal(response.status, 200);
     assert.deepEqual(await response.json(), { result: prediction });
+  });
+});
+
+test('unknown matches map to 404', async () => {
+  const { UnknownMatchError } = require('../lib/errors');
+  await withServer({ predict: async () => { throw new UnknownMatchError('nope'); } }, async url => {
+    assert.equal((await fetch(url + '/predictMatch', post({ data: match }))).status, 404);
   });
 });
 
@@ -43,7 +52,8 @@ test('rejects invalid input before calling paid AI', async () => {
   let called = false;
   await withServer({ getKey: () => 'key', predict: async () => { called = true; } }, async url => {
     assert.equal((await fetch(url + '/predictMatch', post({ data: {} }))).status, 400);
-    assert.equal((await fetch(url + '/predictMatch', post({ data: { ...match, matchEnded: 'false' } }))).status, 400);
+    assert.equal((await fetch(url + '/predictMatch', post({ data: { matchId: '../x' } }))).status, 400);
+    assert.equal((await fetch(url + '/predictMatch', post({ data: { matchId: 7 } }))).status, 400);
     assert.equal((await fetch(url + '/predictMatch', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{' })).status, 400);
     assert.equal((await fetch(url + '/predictMatch', { method: 'POST', body: '{}' })).status, 415);
     assert.equal((await fetch(url + '/predictMatch')).status, 405);

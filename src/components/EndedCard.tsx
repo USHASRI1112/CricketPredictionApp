@@ -78,8 +78,6 @@ const EndedCard: React.FC<EndedCardProps> = ({ match, onPress }) => {
           <Text style={styles.ribbonText}>ENDED</Text>
         </View>
       </View>
-      <Text> Hi you are here</Text>
-
       {/* Teams row */}
       <View style={styles.row}>
         {/* Team 1 */}

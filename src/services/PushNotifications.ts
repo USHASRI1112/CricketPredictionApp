@@ -5,8 +5,6 @@ import {
   onTokenRefresh,
   subscribeToTopic,
   unsubscribeFromTopic,
-  onNotificationOpenedApp,
-  getInitialNotification,
   requestPermission,
   AuthorizationStatus,
 } from '@react-native-firebase/messaging';
@@ -167,40 +165,5 @@ export function onForegroundNotification(
   });
 }
 
-// ─── Notification tap handler ──────────────────────────────────────────────
-// Fires when user TAPS a system notification.
-// Covers two cases:
-//   1. App was in background (minimised) — onNotificationOpenedApp
-//   2. App was killed — getInitialNotification
-// You use the `data` payload to decide where to navigate.
-//
-// Expected data payload shape from Firebase console / your send script:
-//   { screen: 'Match', matchId: 'xyz' }
-//   { screen: 'AllMatches' }
-export function onNotificationTap(
-  callback: (data: Record<string, string>) => void
-): () => void {
-  const messaging = getMessaging();
-
-  // Case 1: app was in background
-  const unsubscribeOpened = onNotificationOpenedApp(messaging, remoteMessage => {
-    // console.log('[FCM] Notification tapped (background):', remoteMessage.data);
-    if (remoteMessage?.data) {
-      callback(remoteMessage.data as Record<string, string>);
-    }
-  });
-
-  // Case 2: app was killed — check on startup
-  getInitialNotification(messaging).then(remoteMessage => {
-    if (remoteMessage?.data) {
-      // console.log('[FCM] Notification tapped (killed state):', remoteMessage.data);
-      callback(remoteMessage.data as Record<string, string>);
-    }
-  }).catch(error => {
-    // console.error('[FCM] getInitialNotification failed:', error);
-  });
-
-  return () => {
-    unsubscribeOpened();
-  };
-}
+// Notification taps are handled in NotificationTaps.ts (registered from index.js).
+// Expected data payload: { screen: 'Match', matchId: 'xyz', type, [matchEnded, status] }

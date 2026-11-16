@@ -1,4 +1,5 @@
 import { parseMatchStart } from '../helpers/MatchTime';
+import { isLiveMatch } from '../helpers/MatchDate';
 /* eslint-disable react-native/no-inline-styles */
 import React, { useEffect, useState, useCallback, useRef } from 'react';
 import {
@@ -323,7 +324,7 @@ function TestSessionView({ data }: { data: TestInfo }) {
 
 // ─── CountdownRow ─────────────────────────────────────────────────────────────
 
-function CountdownRow({ rawDate, delay }: { rawDate: string; delay: number }) {
+function CountdownRow({ rawDate, delay, ended = false }: { rawDate: string; delay: number; ended?: boolean }) {
   const matchDate = parseMatchDate(rawDate);
   const [ms, setMs] = useState<number>(matchDate ? matchDate.getTime() - Date.now() : -1);
   const fade = useRef(new Animated.Value(0)).current;
@@ -354,9 +355,11 @@ function CountdownRow({ rawDate, delay }: { rawDate: string; delay: number }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rawDate]);
 
-  const { label, urgent } = matchDate
-    ? formatCountdown(ms)
-    : { label: 'Time TBC', urgent: false };
+  const { label, urgent } = ended
+    ? { label: 'Ended', urgent: false }
+    : matchDate
+      ? formatCountdown(ms)
+      : { label: 'Time TBC', urgent: false };
   const isStarted = !!matchDate && ms <= 0;
   const textColor = urgent ? '#ef4444' : isStarted ? '#94a3b8' : '#cbd5e1';
 
@@ -365,7 +368,7 @@ function CountdownRow({ rawDate, delay }: { rawDate: string; delay: number }) {
       <View style={styles.infoIconWrap}><Text style={styles.infoIcon}>📅</Text></View>
       <View style={styles.infoTextWrap}>
         <Text style={styles.infoLabel}>
-          {isStarted ? 'Date' : ms < 3_600_000 && ms > 0 ? '⏱ Starts in' : 'Starts in'}
+          {ended ? 'Match' : isStarted ? 'Date' : ms < 3_600_000 && ms > 0 ? '⏱ Starts in' : 'Starts in'}
         </Text>
         <Animated.Text style={[
           styles.infoValue,
@@ -923,7 +926,11 @@ export default function MatchScreen() {
 
             <View style={styles.infoGrid}>
               <VenueRow venue={match.venue || '—'} delay={300} />
-              <CountdownRow rawDate={match.dateTimeGMT || ''} delay={360} />
+              <CountdownRow rawDate={match.dateTimeGMT || ''} delay={360} ended={!!match.matchEnded} />
+              {/* Live/ended matches show their status, e.g. the result when opened from a result alert */}
+              {!!match.status && (match.matchEnded || isLiveMatch(match)) && (
+                <StatusRow key={match.status} status={match.status} delay={390} />
+              )}
               {match.matchType && <FormatRow format={match.matchType} delay={420} />}
             </View>
           </View>

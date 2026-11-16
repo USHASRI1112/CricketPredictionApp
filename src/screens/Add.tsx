@@ -82,6 +82,7 @@ function RewardAdd(_: any, ref: any) {
   const loadedRef = useRef(false);
   const callbacksRef = useRef<Array<() => void>>([]);
   const pendingShowRef = useRef(false);
+  const earnedRef = useRef(false);
   const fallbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const clearFallbackTimer = () => {
@@ -119,6 +120,7 @@ function RewardAdd(_: any, ref: any) {
 
       if (loadedRef.current) {
         pendingShowRef.current = false;
+        earnedRef.current = false;
         clearFallbackTimer();
         markRewardedShown();
         try {
@@ -151,6 +153,7 @@ function RewardAdd(_: any, ref: any) {
         loadedRef.current = true;
         if (pendingShowRef.current && callbacksRef.current.length > 0) {
           pendingShowRef.current = false;
+          earnedRef.current = false;
           clearFallbackTimer();
           markRewardedShown();
           try {
@@ -168,9 +171,9 @@ function RewardAdd(_: any, ref: any) {
 
     const unsubscribeEarned = ad.addAdEventListener(
       RewardedAdEventType.EARNED_REWARD,
-      (reward) => {
-        // console.log('🎁 Reward earned:', reward);
+      () => {
         // fire callbacks when reward is earned
+        earnedRef.current = true;
         drainCallbacks();
       },
     );
@@ -181,7 +184,14 @@ function RewardAdd(_: any, ref: any) {
         loadedRef.current = false;
         pendingShowRef.current = false;
         clearFallbackTimer();
-        drainCallbacks();
+        // Closed before the reward: no prediction (the user can tap again).
+        // Load/show errors still unlock below, since those aren't the user's fault.
+        if (earnedRef.current) {
+          drainCallbacks();
+        } else {
+          callbacksRef.current = [];
+        }
+        earnedRef.current = false;
         // console.log('Rewarded Ad Closed');
         ad.load(); // preload next
       },

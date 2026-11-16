@@ -43,10 +43,6 @@ export function getCricApiKey(): string {
 }
 const BASE_URL = 'https://api.cricapi.com/v1';
 
-// ─── Premium window ───────────────────────────────────────────────────────
-const PREMIUM_START = new Date('2026-04-05T00:00:00+05:30');
-const PREMIUM_END = new Date('2026-05-05T23:59:59+05:30');
-
 // ─── Notification config ──────────────────────────────────────────────────
 const MAX_NOTIFS_PER_MATCH = 5;              // max total notifs per match ever
 
@@ -56,7 +52,6 @@ const IPL_NOTIF_THROTTLE_MS = 7 * 60 * 1000; // IPL matches
 
 // Per topic per IST day; quiet hours are in pacing.ts.
 const NOTIF_DAILY_CAP_PER_TOPIC = Number(process.env.NOTIF_DAILY_CAP_PER_TOPIC) || 6;
-const PREMIUM_NOTIF_DAILY_CAP_PER_TOPIC = 20;
 
 // ─── Other config ─────────────────────────────────────────────────────────
 const MAX_ROWS = 100;
@@ -168,23 +163,25 @@ export interface PredictionResponse {
 
 export type Predictor = (data: PredictRequest) => Promise<PredictionResponse>;
 
+const CONFIDENCE_LEVELS = ['Low', 'Medium', 'High', 'Actual'];
 
-interface NotifEntry {
-  sentCount: number;
-  lastSentAt: number;
-  types: string[];
-
-  // NEW
-  wicketCount?: number;
-  overCount?: number;
-  milestoneCount?: number;
-  lastScore?: string;
-}
-
-// ─── PREMIUM MODE ────────────────────────────────────────────────────────
-
-function isPremiumMode(): boolean {
-  return isPremiumPeriod();
+// The app rejects anything else, and ended-match predictions are cached forever,
+// so a malformed AI answer must never be returned or cached.
+export function normalizePrediction(raw: unknown): PredictionResponse | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const r = raw as Record<string, unknown>;
+  const text = (v: unknown) => (typeof v === 'string' ? v.trim() : '');
+  const winner = text(r.winner);
+  const reason = text(r.reason);
+  const confidence = CONFIDENCE_LEVELS.find(c => c.toLowerCase() === text(r.confidence).toLowerCase());
+  if (!winner || !reason || !confidence) return null;
+  return {
+    winner,
+    confidence,
+    reason,
+    ...(text(r.winProbability) ? { winProbability: text(r.winProbability) } : {}),
+    ...(text(r.keyFactor) ? { keyFactor: text(r.keyFactor) } : {}),
+  };
 }
 
 
@@ -202,9 +199,10 @@ function isIndiaMatch(m: Match): boolean {
     t.startsWith('ind ') || t.endsWith(' ind') || t === 'ind';
 }
 
+// series_id is a UUID, so match on the series and match names instead.
 function isIPLMatch(m: Match): boolean {
-  const s = (m.series_id || m.series || m.name || '').toLowerCase();
-  return s.includes('ipl') || s.includes('indian premier');
+  const s = `${m.series || ''} ${m.name || ''}`.toLowerCase();
+  return /\bipl\b/.test(s) || s.includes('indian premier league');
 }
 
 function isMatchInIndia(m: Match): boolean {
@@ -244,10 +242,6 @@ function getFormat(m: Match): string {
   if (t.includes('odi')) { return 'ODI'; }
   if (t.includes('test')) { return 'Test'; }
   return m.matchType?.toUpperCase() || '';
-}
-
-function isPremiumPeriod(): boolean {
-  return new Date() >= PREMIUM_START && new Date() <= PREMIUM_END;
 }
 
 function getNextMidnightUTC(): number {
@@ -309,8 +303,11 @@ async function getRateLimit(): Promise<RateLimitDoc> {
       return fresh;
     }
     return { ...data, hitsLimit: dailyLimit(data.apiHitsLimit) };
-  } catch {
-    return { hitsUsed: 0, hitsLimit: dailyLimit(), resetAt: getNextMidnightUTC() };
+  } catch (e) {
+    // Unknown usage: treat the quota as spent rather than risk overspending it.
+    logger.warn('[RateLimit] Read failed; pausing CricAPI calls', e);
+    const hitsLimit = dailyLimit();
+    return { hitsUsed: hitsLimit, hitsLimit, resetAt: getNextMidnightUTC() };
   }
 }
 
@@ -437,15 +434,19 @@ function matchStartMs(m: Match): number {
   return Date.parse(/[zZ]|[+-]\d\d:?\d\d$/.test(raw) || !raw.includes('T') ? raw : `${raw}Z`);
 }
 
-// Later sources win field by field; old matches drop out to keep the doc small.
+// Later sources win field by field; old matches drop out to keep the doc small
+// (one Firestore document, capped at 1 MB). Undated matches have no age, so they
+// are kept only while open and still reported by CricAPI within the retention window.
 export function mergeMatches(base: Match[], updates: Match[], now: number): Match[] {
-  const merged = new Map(base.map(m => [m.id, m]));
+  const merged = new Map<string, Match & { _seenAt?: number }>(
+    base.map(m => [m.id, { ...m, _seenAt: (m as { _seenAt?: number })._seenAt ?? now }]));
   for (const m of updates) {
-    merged.set(m.id, { ...merged.get(m.id), ...m });
+    merged.set(m.id, { ...merged.get(m.id), ...m, _seenAt: now });
   }
   return Array.from(merged.values()).filter(m => {
     const start = matchStartMs(m);
-    return Number.isNaN(start) || start >= now - SNAPSHOT_RETENTION_MS;
+    if (!Number.isNaN(start)) return start >= now - SNAPSHOT_RETENTION_MS;
+    return !m.matchEnded && now - (m._seenAt ?? now) < SNAPSHOT_RETENTION_MS;
   });
 }
 
@@ -489,7 +490,10 @@ async function saveSnapshot(snapshot: MatchesSnapshot): Promise<void> {
 export const firestorePredictionStore = {
   async get(matchId: string) {
     const snap = await admin.firestore().collection(PREDICTIONS_COL).doc(matchId).get();
-    return snap.exists ? snap.data() as any : undefined;
+    const entry = snap.exists ? snap.data() as any : undefined;
+    // Entries cached before validation existed may be malformed; regenerate those.
+    const result = normalizePrediction(entry?.result);
+    return entry && result ? { ...entry, result } : undefined;
   },
   async set(matchId: string, value: unknown) {
     await admin.firestore().collection(PREDICTIONS_COL).doc(matchId).set(value as any);
@@ -535,11 +539,14 @@ function isDetailFresh(entry: CachedDetail | undefined, kind: MatchDetailKind, n
 
 async function loadDetail(kind: MatchDetailKind, matchId: string): Promise<CachedDetail> {
   const now = Date.now();
+  // Only matches we list: arbitrary IDs would let anyone spend the CricAPI quota.
+  const match = (await getMatchesSnapshot()).matches.find(m => m.id === matchId);
+  if (!match) throw new MatchDetailUnavailableError(`${kind}: unknown match`);
+
   const ref = admin.firestore().collection(MATCH_DETAILS_COL).doc(matchId);
   const stored = normalizeDetail(kind, (await ref.get()).data()?.[kind] as CachedDetail | undefined);
   if (isDetailFresh(stored, kind, now)) return stored as CachedDetail;
 
-  const match = (await getMatchesSnapshot()).matches.find(m => m.id === matchId);
   // CricAPI flags matches without a squad; asking anyway wastes a hit.
   if (kind === 'squad' && match && !match.hasSquad) {
     return { data: null, fetchedAt: now, final: false };
@@ -602,8 +609,13 @@ export async function getSquadSummary(matchId: string): Promise<string | undefin
   }
 }
 
-// Same fields the app sends, so the notification's prediction is a cache hit when users tap.
+// Built only from our own CricAPI data — never from what a client sends — so nobody
+// can poison the shared prediction cache or inject text into the AI prompt.
+// Used by both the app endpoint and "prediction ready" alerts, so they share cache entries.
 function toPredictRequest(m: Match): PredictRequest {
+  const scoreText = (m.score || [])
+    .map(s => `${s.inning ?? s.title ?? ''}: ${s.r ?? s.runs ?? 0}/${s.w ?? s.wkts ?? 0} (${s.o ?? s.overs ?? 0} overs)`)
+    .join(', ');
   return {
     matchId: m.id,
     teamA: m.teams?.[0] || 'Team A',
@@ -613,9 +625,14 @@ function toPredictRequest(m: Match): PredictRequest {
     matchType: m.matchType || 'unknown',
     venue: m.venue,
     status: m.status,
-    matchEnded: false,
-    scoreText: '',
+    matchEnded: !!m.matchEnded,
+    scoreText,
   };
+}
+
+export async function buildPredictRequest(matchId: string): Promise<PredictRequest | undefined> {
+  const match = (await getMatchesSnapshot()).matches.find(m => m.id === matchId);
+  return match ? toPredictRequest(match) : undefined;
 }
 
 // ─── Save live scores to Firestore ────────────────────────────────────────
@@ -679,15 +696,11 @@ function canSendNotif(
 async function recordNotifSent(
   matchId: string, type: string, tracker: NotifTrackerDoc,
 ): Promise<void> {
-  const existing = tracker[matchId] || { sentCount: 0, lastSentAt: 0, types: [], wicketCount: 0, overCount: 0, milestoneCount: 0, lastScore: '' };
+  const existing = tracker[matchId] || { sentCount: 0, lastSentAt: 0, types: [] };
   const updated: NotifEntry = {
     sentCount: existing.sentCount + 1,
     lastSentAt: Date.now(),
     types: [...existing.types, type],
-    wicketCount: existing.wicketCount || 0,
-    overCount: existing.overCount || 0,
-    milestoneCount: existing.milestoneCount || 0,
-    lastScore: existing.lastScore || '',
   };
   await admin.firestore()
     .collection(CACHE_COL).doc(NOTIF_TRACKER_DOC)
@@ -718,20 +731,25 @@ async function sendFCM(
       priority: 'high',
       notification: { sound: 'default', channelId: 'cricket_alerts', color },
     },
-    data: { screen: 'Match', matchId, type },
+    // Result alerts carry the outcome, so the app can show the match as ended
+    // even if its own copy is stale or the phone is offline when tapped.
+    data: { screen: 'Match', matchId, type, ...(type === 'result' ? { matchEnded: 'true', status: body } : {}) },
   });
   logger.info(`[FCM] ✅ [${topic}] "${title}"`);
 }
 
 // ─── Push notifications ────────────────────────────────────────────────────
 // ✅ Runs EVERY DAY — not restricted to IPL season
-// ✅ 15 min throttle — max one notification run per 15 min
+// ✅ 15 min throttle (7 min while an IPL match is live)
 // ✅ Max 5 notifications per match total
 // ✅ No duplicate types per match
 // ✅ Quiet hours (IST) and a daily cap per topic; suppressed alerts are not retried
+// ✅ Failed sends are not recorded, so they are retried on the next run
 // ✅ "Prediction ready" for India/IPL matches 30–90 min before start
 
 const PREDICTIONS_TOPIC = 'predictions_ready';
+
+type SendOutcome = 'sent' | 'suppressed' | 'failed';
 
 // bypassThrottle: used right after an end-of-match check so the result goes out immediately.
 async function checkAndNotify(
@@ -740,13 +758,8 @@ async function checkAndNotify(
 
   const tracker = await getNotifTracker();
 
-  // Detect if ANY IPL match is live
   const hasLiveIPLMatch = matches.some(m => isIPLMatch(m) && isLive(m));
-
-  // Choose throttle dynamically
-  const throttleMs = hasLiveIPLMatch
-    ? IPL_NOTIF_THROTTLE_MS
-    : DEFAULT_NOTIF_THROTTLE_MS;
+  const throttleMs = hasLiveIPLMatch ? IPL_NOTIF_THROTTLE_MS : DEFAULT_NOTIF_THROTTLE_MS;
 
   const lastNotifRun = (tracker as any)._lastNotifRunAt as number || 0;
   const msSinceLastNotif = Date.now() - lastNotifRun;
@@ -763,18 +776,31 @@ async function checkAndNotify(
   }
 
   const daily = freshDailyCounts((tracker as any)._daily as DailyNotifCounts | undefined, Date.now());
-  const dailyCap = isPremiumMode() ? PREMIUM_NOTIF_DAILY_CAP_PER_TOPIC : NOTIF_DAILY_CAP_PER_TOPIC;
 
   const send = async (
     topic: string, title: string, body: string, matchId: string, type: string,
-  ): Promise<boolean> => {
-    if (!allowNotification(topic, type, daily, dailyCap, Date.now())) {
+  ): Promise<SendOutcome> => {
+    if (!allowNotification(topic, type, daily, NOTIF_DAILY_CAP_PER_TOPIC, Date.now())) {
       logger.info(`[Notif] Suppressed [${topic}] ${type} (quiet hours or daily cap)`);
-      return false;
+      return 'suppressed';
     }
-    await sendFCM(topic, title, body, matchId, type);
+    try {
+      await sendFCM(topic, title, body, matchId, type);
+    } catch (e) {
+      logger.warn(`[Notif] Send failed [${topic}] ${type} for ${matchId}`, e);
+      return 'failed';
+    }
     daily.counts[topic] = (daily.counts[topic] || 0) + 1;
-    return true;
+    return 'sent';
+  };
+
+  // Sends, then records it unless FCM failed (suppressed alerts are recorded so they aren't retried).
+  const notify = async (
+    m: Match, topic: string, title: string, body: string, type: string,
+  ): Promise<void> => {
+    if (await send(topic, title, body, m.id, type) !== 'failed') {
+      await recordNotifSent(m.id, type, tracker);
+    }
   };
 
   // Generates (and caches) the prediction, so users who tap get it instantly.
@@ -782,274 +808,75 @@ async function checkAndNotify(
     if (!predict || mins === null || mins <= 30 || mins > 90) return false;
     if (!(isIndiaMatch(m) || isIPLMatch(m)) || (m.teams?.length || 0) < 2) return false;
     // Check before calling the AI so suppressed alerts cost nothing.
-    if (!allowNotification(PREDICTIONS_TOPIC, 'prediction_ready', daily, dailyCap, Date.now())) return false;
+    if (!allowNotification(PREDICTIONS_TOPIC, 'prediction_ready', daily, NOTIF_DAILY_CAP_PER_TOPIC, Date.now())) return false;
     try {
       const p = await predict(toPredictRequest(m));
       const odds = p.winProbability || `${p.confidence} confidence`;
       return await send(PREDICTIONS_TOPIC, '🔮 AI prediction ready',
-        `${tag} — AI pick: ${p.winner} (${odds}). Tap for the full analysis.`, m.id, 'prediction_ready');
+        `${tag} — AI pick: ${p.winner} (${odds}). Tap for the full analysis.`, m.id, 'prediction_ready') === 'sent';
     } catch (e) {
       logger.warn('[Notif] Prediction-ready skipped', e);
       return false;
     }
   };
 
-  const parseNumber = (value: unknown): number => {
-    if (value === null || value === undefined || value === '') {
-      return NaN;
-    }
-    if (typeof value === 'number') {
-      return value;
-    }
-    const normalized = String(value).replace(/[^\d./]/g, '');
-    const parsed = parseFloat(normalized);
-    return Number.isFinite(parsed) ? parsed : NaN;
-  };
-
-  const parseScoreText = (text: string | undefined) => {
-    if (!text) return null;
-    const match = text.match(/^(\d+)\s*\/\s*(\d+)\s*\(\s*([0-9]+(?:\.[0-9]+)?)\s*ov\s*\)/i);
-    if (!match) return null;
-    return {
-      runs: parseInt(match[1], 10),
-      wickets: parseInt(match[2], 10),
-      overs: parseFloat(match[3]),
-    };
-  };
-
-  const shouldSendScoreUpdate = (prev?: string, curr?: string) => {
-    const a = parseScoreText(prev);
-    const b = parseScoreText(curr);
-    if (!a || !b) return { send: false };
-
-    if (b.wickets > a.wickets) return { send: true, type: 'wicket' };
-    if (Math.floor(b.overs) % 5 === 0 && Math.floor(b.overs) !== Math.floor(a.overs)) {
-      return { send: true, type: 'over' };
-    }
-    if (Math.floor(b.runs / 50) > Math.floor(a.runs / 50)) {
-      return { send: true, type: 'milestone' };
-    }
-
-    return { send: false };
-  };
-
-  const getLatestInningScore = (m: Match): InningScore | null => {
-    if (!m.score || m.score.length === 0) return null;
-
-    const candidates = m.score.map((inning, index) => {
-      const runs = parseNumber(inning.r ?? inning.runs);
-      const wickets = parseNumber(inning.w ?? inning.wkts);
-      const overs = parseNumber(inning.o ?? inning.overs);
-      const hasNumbers = !Number.isNaN(runs) || !Number.isNaN(wickets) || !Number.isNaN(overs);
-
-      return { inning, index, runs, wickets, overs, hasNumbers };
-    }).filter(candidate => candidate.hasNumbers);
-
-    if (candidates.length === 0) {
-      return m.score[m.score.length - 1] ?? null;
-    }
-
-    candidates.sort((a, b) => {
-      const oversA = Number.isNaN(a.overs) ? -1 : a.overs;
-      const oversB = Number.isNaN(b.overs) ? -1 : b.overs;
-      if (oversA !== oversB) {
-        return oversB - oversA;
-      }
-
-      const runsA = Number.isNaN(a.runs) ? -1 : a.runs;
-      const runsB = Number.isNaN(b.runs) ? -1 : b.runs;
-      if (runsA !== runsB) {
-        return runsB - runsA;
-      }
-
-      return b.index - a.index;
-    });
-
-    return candidates[0]?.inning ?? null;
-  };
-
-  const getScoreText = (m: Match): string => {
-    const s = getLatestInningScore(m);
-    if (!s) return '';
-    const runs = parseNumber(s.r ?? s.runs);
-    const wickets = parseNumber(s.w ?? s.wkts);
-    const overs = parseNumber(s.o ?? s.overs);
-
-    if (Number.isNaN(runs) || Number.isNaN(wickets) || Number.isNaN(overs)) {
-      return '';
-    }
-
-    return `${Math.round(runs)}/${Math.round(wickets)} (${overs.toFixed(1)} ov)`;
-  };
-
-  try {
-  for (const m of matches) {
-
-    const isPremium = isPremiumMode();
-
-    // 🔥 dynamic limits
-    const maxPerMatch = isPremium
-      ? (isIPLMatch(m) ? 10 : 7)
-      : MAX_NOTIFS_PER_MATCH;
-
-    // RESULT — India/IPL matches we announced as live; not limited by maxPerMatch
+  const notifyMatch = async (m: Match): Promise<void> => {
+    // RESULT — India/IPL matches we announced as live; not limited per match
     const seen = tracker[m.id];
     if (m.matchEnded && (isIndiaMatch(m) || isIPLMatch(m))
       && seen?.types.some(t => t.startsWith('live')) && !seen.types.includes('result')) {
-      await send(isIndiaMatch(m) ? 'india_matches' : 'ipl_matches',
-        `🏁 ${getTeamLabel(m)}`, m.status || 'Match ended', m.id, 'result');
-      await recordNotifSent(m.id, 'result', tracker);
+      await notify(m, isIndiaMatch(m) ? 'india_matches' : 'ipl_matches',
+        `🏁 ${getTeamLabel(m)}`, m.status || 'Match ended', 'result');
     }
-    if (m.matchEnded) continue;
-
-    const entry: NotifEntry = tracker[m.id] || {
-      sentCount: 0,
-      types: [],
-      wicketCount: 0,
-      overCount: 0,
-      milestoneCount: 0,
-      lastScore: '',
-    };
-
-    // Ensure optional fields are always defined
-    entry.wicketCount = entry.wicketCount ?? 0;
-    entry.overCount = entry.overCount ?? 0;
-    entry.milestoneCount = entry.milestoneCount ?? 0;
-    entry.lastScore = entry.lastScore ?? '';
-
-    if (entry.sentCount >= maxPerMatch) continue;
+    if (m.matchEnded) return;
 
     const label = getTeamLabel(m);
     const fmt = getFormat(m);
     const tag = fmt ? `${label} · ${fmt}` : label;
     const mins = minutesUntilStart(m);
-    const scoreText = getScoreText(m);
-
-    if (isLive(m)) {
-      logger.info('[Notif] Processing live match', {
-        matchId: m.id,
-        name: m.name,
-        status: m.status,
-        previousScoreText: entry.lastScore,
-        scoreText,
-      });
-    }
-
-    // ───────── PREMIUM MODE LOGIC ─────────
-    if (isPremium) {
-
-      // BEFORE MATCH
-      if (!entry.types.includes('prediction_ready') && entry.sentCount < maxPerMatch
-        && await sendPredictionReady(m, tag, mins)) {
-        entry.types.push('prediction_ready'); entry.sentCount++;
-      }
-
-      if (mins !== null && mins > 0) {
-
-        if (mins <= 60 && mins > 30 && !entry.types.includes('soon_60')) {
-          await send('ipl_matches', '⏰ Match in 1 hour', tag, m.id, 'soon_60');
-          entry.types.push('soon_60'); entry.sentCount++;
-        }
-
-        if (mins <= 30 && mins > 10 && !entry.types.includes('soon_30')) {
-          await send('ipl_matches', '⏰ Match in 30 min', tag, m.id, 'soon_30');
-          entry.types.push('soon_30'); entry.sentCount++;
-        }
-
-        if (mins <= 10 && mins > 0 && !entry.types.includes('soon_10')) {
-          await send('ipl_matches', '⏰ Starting soon', tag, m.id, 'soon_10');
-          entry.types.push('soon_10'); entry.sentCount++;
-        }
-      }
-
-      // LIVE
-      if (isLive(m) && !entry.types.includes('live')) {
-        await send('ipl_matches', '🟢 Match LIVE', `${tag} has started`, m.id, 'live');
-        entry.types.push('live'); entry.sentCount++;
-      }
-
-      // SCORE UPDATES
-      if (isLive(m) && entry.sentCount < maxPerMatch) {
-
-        const decision = shouldSendScoreUpdate(entry.lastScore, scoreText);
-        logger.info('[Notif] Live score evaluation', {
-          matchId: m.id,
-          name: m.name,
-          status: m.status,
-          previousScoreText: entry.lastScore,
-          scoreText,
-          decision,
-        });
-
-        if (decision.send) {
-
-          if (decision.type === 'wicket' && entry.wicketCount < 2) {
-            await send('ipl_matches', '🚨 WICKET!', `${tag} — ${scoreText}`, m.id, 'wicket');
-            entry.wicketCount++; entry.sentCount++;
-          }
-
-          if (decision.type === 'over' && entry.overCount < 2) {
-            await send('ipl_matches', '📊 Over Update', `${tag} — ${scoreText}`, m.id, 'over');
-            entry.overCount++; entry.sentCount++;
-          }
-
-          if (decision.type === 'milestone' && entry.milestoneCount < 2) {
-            await send('ipl_matches', '🔥 Milestone', `${tag} — ${scoreText}`, m.id, 'milestone');
-            entry.milestoneCount++; entry.sentCount++;
-          }
-        }
-
-        entry.lastScore = scoreText;
-      }
-
-      // SAVE
-      await admin.firestore()
-        .collection(CACHE_COL).doc(NOTIF_TRACKER_DOC)
-        .set({ [m.id]: entry }, { merge: true });
-
-      continue; // skip old logic
-    }
-
-    // ───────── OLD LOGIC (UNCHANGED AFTER MAY 5) ─────────
+    const live = isLive(m);
 
     if (canSendNotif(m.id, 'prediction_ready', tracker) && await sendPredictionReady(m, tag, mins)) {
       await recordNotifSent(m.id, 'prediction_ready', tracker);
     }
 
-    if (isIPLMatch(m) && isLive(m) && canSendNotif(m.id, 'live_ipl', tracker)) {
-      await send('ipl_matches', '🏏 IPL is LIVE!', `${tag} has started!`, m.id, 'live_ipl');
-      await recordNotifSent(m.id, 'live_ipl', tracker);
+    if (isIPLMatch(m) && live && canSendNotif(m.id, 'live_ipl', tracker)) {
+      await notify(m, 'ipl_matches', '🏏 IPL is LIVE!', `${tag} has started!`, 'live_ipl');
     }
 
-    if (isIndiaMatch(m) && isLive(m) && canSendNotif(m.id, 'live_india', tracker)) {
-      await send('india_matches', '🇮🇳 India Match is LIVE!', `${tag}`, m.id, 'live_india');
-      await recordNotifSent(m.id, 'live_india', tracker);
+    if (isIndiaMatch(m) && live && canSendNotif(m.id, 'live_india', tracker)) {
+      await notify(m, 'india_matches', '🇮🇳 India Match is LIVE!', tag, 'live_india');
     }
 
-    if (isLive(m) && !isIPLMatch(m) && !isIndiaMatch(m) && canSendNotif(m.id, 'live_any', tracker)) {
-      await send('live_matches', '🟢 Match is LIVE', `${tag}`, m.id, 'live_any');
-      await recordNotifSent(m.id, 'live_any', tracker);
+    if (live && !isIPLMatch(m) && !isIndiaMatch(m) && canSendNotif(m.id, 'live_any', tracker)) {
+      await notify(m, 'live_matches', '🟢 Match is LIVE', tag, 'live_any');
     }
 
-    if (isIPLMatch(m) && mins !== null && mins > 0 && mins <= 30
-      && canSendNotif(m.id, 'soon_ipl', tracker)) {
-      await send('ipl_matches', `🏏 IPL in ${mins} min!`, `${tag}`, m.id, 'soon_ipl');
-      await recordNotifSent(m.id, 'soon_ipl', tracker);
+    const startingSoon = mins !== null && mins > 0 && mins <= 30;
+
+    if (isIPLMatch(m) && startingSoon && canSendNotif(m.id, 'soon_ipl', tracker)) {
+      await notify(m, 'ipl_matches', `🏏 IPL in ${mins} min!`, tag, 'soon_ipl');
     }
 
-    if (isIndiaMatch(m) && mins !== null && mins > 0 && mins <= 30
-      && canSendNotif(m.id, 'soon_india', tracker)) {
-      await send('india_matches', `🇮🇳 India in ${mins} min!`, `${tag}`, m.id, 'soon_india');
-      await recordNotifSent(m.id, 'soon_india', tracker);
+    if (isIndiaMatch(m) && startingSoon && canSendNotif(m.id, 'soon_india', tracker)) {
+      await notify(m, 'india_matches', `🇮🇳 India in ${mins} min!`, tag, 'soon_india');
     }
 
-    if (isMatchInIndia(m) && !isIndiaMatch(m) && !isIPLMatch(m)
-      && mins !== null && mins > 0 && mins <= 30
+    if (isMatchInIndia(m) && !isIndiaMatch(m) && !isIPLMatch(m) && startingSoon
       && canSendNotif(m.id, 'soon_india_venue', tracker)) {
-      await send('india_matches', `📍 Match in India in ${mins} min!`, `${tag}`, m.id, 'soon_india_venue');
-      await recordNotifSent(m.id, 'soon_india_venue', tracker);
+      await notify(m, 'india_matches', `📍 Match in India in ${mins} min!`, tag, 'soon_india_venue');
     }
-  }
+  };
+
+  try {
+    for (const m of matches) {
+      // One match failing (e.g. a Firestore write) must not stop alerts for the rest.
+      try {
+        await notifyMatch(m);
+      } catch (e) {
+        logger.warn(`[Notif] Skipped match ${m.id}`, e);
+      }
+    }
   } finally {
     await admin.firestore()
       .collection(CACHE_COL).doc(NOTIF_TRACKER_DOC)
@@ -1206,7 +1033,7 @@ export async function cricketMaster(predict?: Predictor): Promise<void> {
 export async function predictMatch(body: PredictRequest): Promise<PredictionResponse> {
   const startedAt = Date.now();
   try {
-    logger.info('Received prediction request', body);
+    logger.info('Received prediction request', { matchId: body.matchId, matchEnded: !!body.matchEnded });
 
     const {
       matchId, teamA, teamB, date, tournament,
@@ -1322,8 +1149,9 @@ export async function predictMatch(body: PredictRequest): Promise<PredictionResp
     );
 
     const content = response.data.choices[0].message.content;
-    const parsed: PredictionResponse = JSON.parse(content);
-    logger.info('Prediction done', parsed);
+    const parsed = normalizePrediction(JSON.parse(content));
+    if (!parsed) throw new Error('AI returned an invalid prediction');
+    logger.info('Prediction done', { matchId, winner: parsed.winner, confidence: parsed.confidence });
     return parsed;
 
   } catch (error) {

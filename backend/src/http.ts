@@ -1,12 +1,15 @@
 import { createServer, IncomingMessage, ServerResponse } from 'node:http';
 import { gzipSync } from 'node:zlib';
 import { PredictionRateLimitedError } from './predictionCache';
-import { MatchDetailUnavailableError } from './errors';
+import { MatchDetailUnavailableError, UnknownMatchError } from './errors';
+
+const MATCH_ID = /^[A-Za-z0-9-]{1,64}$/;
 
 interface Dependencies {
   // Legacy: app versions before GET /matches call CricAPI with this key. Omit to disable.
   getKey?: () => string;
-  predict: (data: any) => Promise<unknown>;
+  // Receives only the match ID; match details come from the server's own snapshot.
+  predict: (data: { matchId: string }) => Promise<unknown>;
   getMatches?: () => Promise<{ matches: unknown[]; updatedAt: number }>;
   getMatchDetail?: (kind: 'scorecard' | 'squad', matchId: string) => Promise<unknown>;
   onActivity?: () => void;
@@ -103,20 +106,19 @@ export function createApiServer(deps: Dependencies) {
         return;
       }
       const data = body?.data;
-      const required = ['matchId', 'teamA', 'teamB'];
-      const strings = [...required, 'date', 'tournament', 'matchType', 'venue', 'status', 'scoreText'];
+      // The app still sends teams, status, score etc.; they are ignored so clients
+      // can't poison the shared prediction cache or inject text into the AI prompt.
       if (!data || typeof data !== 'object' || Array.isArray(data) ||
-          required.some(key => typeof data[key] !== 'string' || !data[key].trim()) ||
-          strings.some(key => data[key] !== undefined &&
-            (typeof data[key] !== 'string' || data[key].length > 2000)) ||
-          (data.matchEnded !== undefined && typeof data.matchEnded !== 'boolean')) {
+          typeof data.matchId !== 'string' || !MATCH_ID.test(data.matchId)) {
         reply(res, 400, { error: 'Invalid match details' });
         return;
       }
       // Keep the existing callable-style request/response contract for the app.
-      reply(res, 200, { result: await deps.predict(data) });
+      reply(res, 200, { result: await deps.predict({ matchId: data.matchId }) });
     } catch (error) {
-      if (error instanceof PredictionRateLimitedError) {
+      if (error instanceof UnknownMatchError) {
+        reply(res, 404, { error: 'Match not found' });
+      } else if (error instanceof PredictionRateLimitedError) {
         reply(res, 429, { error: 'Too many prediction requests; try again shortly' });
       } else {
         reply(res, 502, { error: 'Prediction failed; please try again' });

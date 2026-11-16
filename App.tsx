@@ -1,4 +1,4 @@
-import { NavigationContainer, NavigationContainerRef, useNavigation } from '@react-navigation/native';
+import { NavigationContainer, NavigationContainerRef, StackActions, useNavigation } from '@react-navigation/native';
 import { createNativeStackNavigator, NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import React, { useEffect, useRef, useState } from 'react';
@@ -30,10 +30,11 @@ import {
   ensureAndroidNotificationPermission,
   initPushNotifications,
   onForegroundNotification,
-  onNotificationTap,
   createNotificationChannel,
   showForegroundNotification,
 } from './src/services/PushNotifications';
+import { subscribeNotificationTaps, TapData } from './src/services/NotificationTaps';
+import { resolveNotificationTarget } from './src/helpers/NotificationTarget';
 import { applyNotificationPrefs, loadNotificationPrefs } from './src/services/NotificationPrefs';
 
 // No interstitials right after a notification tap.
@@ -135,10 +136,11 @@ function resolveToastType(title: string, data: Record<string, string>): ToastDat
     if (data.type === 'prediction' || data.type === 'prediction_ready') return 'prediction';
   }
   const t = title.toLowerCase();
-  if (t.includes('india') || t.includes('ind')) return 'india';
-  if (t.includes('ipl'))                         return 'ipl';
+  // Whole words only, so "behind" isn't India and "again" isn't AI.
+  if (/\b(india|ind)\b/.test(t))                 return 'india';
+  if (/\bipl\b/.test(t))                         return 'ipl';
   if (t.includes('live') || t.includes('start')) return 'live';
-  if (t.includes('predict') || t.includes('ai')) return 'prediction';
+  if (t.includes('predict') || /\bai\b/.test(t)) return 'prediction';
   return 'default';
 }
 
@@ -157,6 +159,75 @@ export function SplashWrapper() {
   );
 }
  
+// ── Notification tap → screen ───────────────────────────────────────────
+const FRESH_MATCH_WAIT_MS = 4000;
+
+// Prefer the backend's latest copy (a result alert's match has just ended, so the
+// phone's copy may still say live), but don't keep the user waiting: after a few
+// seconds, or offline, fall back to what's in memory or storage.
+async function findMatch(matchId: string): Promise<Match | undefined> {
+  const fresh = await Promise.race([
+    fetchMatches().catch(() => undefined),
+    new Promise<undefined>(resolve => setTimeout(() => resolve(undefined), FRESH_MATCH_WAIT_MS)),
+  ]);
+  if (fresh && fresh.length > 0) {
+    queryClient.setQueryData(ALL_MATCHES_QUERY_KEY, fresh);
+    const found = fresh.find(m => m.id === matchId);
+    if (found) { return found; }
+  }
+  const inMemory = queryClient.getQueryData<Match[]>(ALL_MATCHES_QUERY_KEY);
+  return inMemory?.find(m => m.id === matchId)
+    ?? (await getMatchesFromStorage()).find(m => m.id === matchId);
+}
+
+type NavRef = React.RefObject<NavigationContainerRef<RootStackParamList> | null>;
+
+async function waitForNavigation(navigationRef: NavRef): Promise<boolean> {
+  for (let i = 0; i < 100 && !navigationRef.current?.isReady(); i++) {
+    await new Promise<void>(resolve => setTimeout(resolve, 100));
+  }
+  return !!navigationRef.current?.isReady();
+}
+
+let latestTap = 0;
+
+async function openFromNotification(navigationRef: NavRef, data: TapData) {
+  const tap = ++latestTap;
+  const match = data.screen === 'Match' && data.matchId ? await findMatch(data.matchId) : undefined;
+  const target = resolveNotificationTarget(data, match);
+  if (!(await waitForNavigation(navigationRef)) || tap !== latestTap) { return; } // a newer tap wins
+  const nav = navigationRef.current!;
+  const current = nav.getCurrentRoute();
+
+  // Cold start: replace the splash with Home + target, so Back goes to Home
+  // and the splash can't later swap the target out for Home.
+  if (!current || current.name === 'Splash') {
+    const routes: { name: keyof RootStackParamList; params?: object }[] = [{ name: 'Home' }];
+    if (target.screen === 'Match') {
+      routes.push({ name: 'Match', params: { matchId: target.match.id, match: target.match } });
+    } else if (target.screen === 'AllMatches') {
+      routes.push({ name: 'AllMatches', params: { focusFilter: target.focusFilter, focusMatchId: target.focusMatchId } });
+    }
+    nav.reset({ index: routes.length - 1, routes: routes as any });
+    return;
+  }
+
+  if (target.screen === 'Match') {
+    const params = { matchId: target.match.id, match: target.match };
+    const onSameMatch = current.name === 'Match'
+      && (current.params as RootStackParamList['Match'] | undefined)?.matchId === target.match.id;
+    if (onSameMatch) {
+      nav.setParams(params); // refresh it (e.g. now ended) instead of stacking a copy
+    } else {
+      nav.dispatch(StackActions.push('Match', params));
+    }
+  } else if (target.screen === 'AllMatches') {
+    nav.navigate('AllMatches', { focusFilter: target.focusFilter, focusMatchId: target.focusMatchId });
+  } else {
+    nav.navigate('Home');
+  }
+}
+
 export default function App() {
   const isDarkMode    = useColorScheme() === 'dark';
   const navigationRef = useRef<NavigationContainerRef<RootStackParamList>>(null);
@@ -214,10 +285,20 @@ export default function App() {
     };
   }, []);
 
+  // ── Notification taps ─────────────────────────────────────────────────
+  // Independent of permission/token setup below, so a tap always navigates —
+  // even offline or if notification setup fails.
+  useEffect(() => subscribeNotificationTaps(data => {
+    suppressInterstitials(NOTIFICATION_AD_GRACE_MS);
+    void openFromNotification(navigationRef, data);
+  }), []);
+
   // ── Push notifications ────────────────────────────────────────────────
   useEffect(() => {
-    let unsubscribeForeground: (() => void) | undefined;
-    let unsubscribeTap: (() => void) | undefined;
+    const unsubscribeForeground = onForegroundNotification((title, body, data) => {
+      void showForegroundNotification(title, body, data);
+      setToast({ title, body, type: resolveToastType(title, data) });
+    });
 
     async function setupNotifications() {
       try {
@@ -231,30 +312,6 @@ export default function App() {
 
         // Topics the user turned on in Notification settings
         await applyNotificationPrefs(await loadNotificationPrefs());
-
-        unsubscribeForeground = onForegroundNotification((title, body, data) => {
-          // console.log('[FCM] Foreground → showing toast:', title, body);
-          void showForegroundNotification(title, body, data);
-          setToast({ title, body, type: resolveToastType(title, data) });
-        });
-
-        unsubscribeTap = onNotificationTap((data) => {
-          if (!data) { return; }
-          suppressInterstitials(NOTIFICATION_AD_GRACE_MS);
-          if (data.screen === 'Match' && data.matchId) {
-            const cached = queryClient.getQueryData<Match[]>(ALL_MATCHES_QUERY_KEY);
-            const match  = cached?.find(m => m.id === data.matchId);
-            if (match) {
-              navigationRef.current?.navigate('Match', { matchId: data.matchId, match });
-            } else {
-              navigationRef.current?.navigate('AllMatches');
-            }
-          } else if (data.screen === 'AllMatches') {
-            navigationRef.current?.navigate('AllMatches');
-          } else {
-            navigationRef.current?.navigate('Home');
-          }
-        });
       } catch (e) {
         console.error('[FCM] Setup failed:', e);
       }
@@ -262,10 +319,7 @@ export default function App() {
 
     setupNotifications();
 
-    return () => {
-      unsubscribeForeground?.();
-      unsubscribeTap?.();
-    };
+    return unsubscribeForeground;
   }, []);
 
   return (
@@ -283,7 +337,7 @@ export default function App() {
               contentStyle:     { backgroundColor: '#03080F' },
             }}
           >
-            <Stack.Screen name="Splash"     component={SplashWrapper} />
+            <Stack.Screen name="Splash" component={SplashWrapper} options={{ headerShown: false }} />
             <Stack.Screen
               name="Home"
               component={HomeScreen}

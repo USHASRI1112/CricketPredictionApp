@@ -79,6 +79,31 @@ test('supports explicitly configured GPT-OSS reasoning effort', async () => {
   }
 });
 
+test('invalid AI output is rejected; confidence casing is normalized', async () => {
+  const { normalizePrediction } = require('../lib/cricket');
+  assert.equal(normalizePrediction({ winner: 'India', reason: 'x' }), null);
+  assert.equal(normalizePrediction({ winner: ' ', confidence: 'High', reason: 'x' }), null);
+  assert.equal(normalizePrediction({ winner: 'India', confidence: 'Certain', reason: 'x' }), null);
+  assert.deepEqual(normalizePrediction({ winner: 'India', confidence: 'medium', reason: 'x', keyFactor: 'Spin' }),
+    { winner: 'India', confidence: 'Medium', reason: 'x', keyFactor: 'Spin' });
+
+  process.env.GROQ_API_KEY = 'test-groq-key';
+  axios.post = async () => ({ data: { choices: [{ message: { content: JSON.stringify({ winner: 'India' }) } }] } });
+  await assert.rejects(predictMatch({ matchId: '123', teamA: 'India', teamB: 'Australia' }), /Prediction failed/);
+});
+
+test('undated matches leave the snapshot once ended or no longer reported', () => {
+  const { mergeMatches } = require('../lib/cricket');
+  const now = Date.UTC(2026, 9, 31, 12);
+  const day = 24 * 3600000;
+  const merged = mergeMatches(
+    [{ id: 'stale', _seenAt: now - 5 * day }, { id: 'done', matchEnded: true }, { id: 'open', _seenAt: now - day }],
+    [],
+    now,
+  );
+  assert.deepEqual(merged.map(m => m.id), ['open']);
+});
+
 test('snapshot merge lets fresh data win and drops matches older than 4 days', () => {
   const { mergeMatches } = require('../lib/cricket');
   const now = Date.UTC(2026, 9, 31, 12);

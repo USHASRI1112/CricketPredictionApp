@@ -1,9 +1,10 @@
 import * as admin from 'firebase-admin';
 import { randomUUID } from 'node:crypto';
 import {
-  cricketMaster, firestorePredictionStore, getCricApiKey, getMatchDetail, getMatchesSnapshot, getSquadSummary,
-  predictMatch, recordActivity,
+  buildPredictRequest, cricketMaster, firestorePredictionStore, getCricApiKey, getMatchDetail, getMatchesSnapshot,
+  getSquadSummary, predictMatch, recordActivity,
 } from './cricket';
+import { UnknownMatchError } from './errors';
 import { createApiServer } from './http';
 import { createCachedPredictor } from './predictionCache';
 import { startScheduler } from './scheduler';
@@ -19,6 +20,12 @@ const predict = createCachedPredictor(
   async data => predictMatch({ ...data, squads: await getSquadSummary(data.matchId) }),
   firestorePredictionStore,
 );
+// App requests name a match; everything the AI sees comes from our snapshot.
+async function predictForApp({ matchId }: { matchId: string }) {
+  const request = await buildPredictRequest(matchId);
+  if (!request) throw new UnknownMatchError(matchId);
+  return predict(request);
+}
 
 // AdMob verifies this file at the root of the website listed on the Play Store.
 const admobPublisherId = process.env.ADMOB_PUBLISHER_ID?.trim() || 'pub-1800123243044416';
@@ -49,7 +56,7 @@ const server = createApiServer({
   // Old app versions call CricAPI directly with this key. Give them a separate
   // (free) key so they can't spend the backend's paid quota; unset it once they're gone.
   getKey: legacyCricApiKey ? () => legacyCricApiKey : undefined,
-  predict,
+  predict: predictForApp,
   getMatches: getMatchesSnapshot,
   getMatchDetail,
   onActivity: recordActivity,
