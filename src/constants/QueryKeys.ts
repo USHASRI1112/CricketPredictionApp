@@ -1,0 +1,1 @@
+export const ALL_MATCHES_QUERY_KEY = ['ALL_MATCHES', 'shared'] as const;

@@ -14,6 +14,7 @@ export interface Match {
   teams: string[]; //In APi - we are getting array of length 1 sometimes - due to other team not confirming.
   teamInfo?: TeamInfo[];
   series_id: string;
+  series?: string; // optional series name (added to match HomeScreen usage)
   fantasyEnabled?: boolean;
   bbbEnabled?: boolean;
   hasSquad?: boolean;
@@ -64,3 +65,24 @@ export interface Country {
   code: string;
   flag: string;
 }
+
+
+export interface Checkpoint {
+  label:     string;
+  overs:     number;
+  phase:     string;
+  projected: number;
+  isPast:    boolean;
+  isCurrent: boolean;
+}
+
+
+export interface TestInfo {
+  crr:             number;
+  session:         string;
+  runsToLunch:     number; // projected runs to lunch (~30 ov)
+  runsToTea:       number; // projected runs to tea  (~60 ov)
+  runsToStumps:    number; // projected runs to stumps (~90 ov)
+}
+
+
