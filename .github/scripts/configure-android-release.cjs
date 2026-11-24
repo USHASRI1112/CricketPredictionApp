@@ -13,7 +13,7 @@ if (url.protocol !== 'https:' || url.username || url.password || url.search || u
   throw new Error('Provide a production HTTPS backend URL without credentials, query, or fragment');
 }
 const gradleSource = fs.readFileSync('android/app/build.gradle', 'utf8');
-const configuredCode = gradleSource.match(/findProperty\("APP_VERSION_CODE"\) \?: "(\d+)"/)?.[1];
+const configuredCode = gradleSource.match(/findProperty\("RELEASE_VERSION_CODE"\) \?: "(\d+)"/)?.[1];
 const versionCode = process.env.VERSION_CODE?.trim() || configuredCode;
 if (!versionCode) {
   throw new Error('Missing RELEASE_VERSION_CODE. Add it under repository Settings > Secrets and variables > Actions > Variables, then push V2 again. Use a code higher than every Play Console upload.');

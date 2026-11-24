@@ -212,8 +212,8 @@ Optional repository **variables** override the committed app configuration:
 | Variable | Default when omitted |
 | --- | --- |
 | `RELEASE_BACKEND_URL` | Production HTTPS URL in `src/config/Backend.ts` |
-| `RELEASE_VERSION_CODE` | Version code in `android/app/build.gradle` (currently `3`) |
-| `RELEASE_VERSION_NAME` | `1.0.2` |
+| `RELEASE_VERSION_CODE` | Version code in `android/app/build.gradle` (currently `5`) |
+| `RELEASE_VERSION_NAME` | `1.1.0` |
 
 These release settings are also accepted from same-named secrets for compatibility
 if they were accidentally saved under Secrets instead of Variables. Signing

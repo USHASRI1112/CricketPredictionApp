@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
 const source = fs.readFileSync(__dirname + '/configure-android-release.cjs', 'utf8');
-function run(env = {}, backend = "const PRODUCTION_BACKEND_URL = 'https://cricket.example/';", gradle = 'versionCode = (findProperty("APP_VERSION_CODE") ?: "3").toInteger()') {
+function run(env = {}, backend = "const PRODUCTION_BACKEND_URL = 'https://cricket.example/';", gradle = 'versionCode = (findProperty("RELEASE_VERSION_CODE") ?: "5").toInteger()') {
   const writes = {};
   const fakeFs = {
     readFileSync: path => path === 'src/config/Backend.ts' ? backend : gradle,
@@ -13,10 +13,10 @@ function run(env = {}, backend = "const PRODUCTION_BACKEND_URL = 'https://cricke
   vm.runInNewContext(source, { URL, console: { log() {} }, process: { env }, require: () => fakeFs });
   return writes;
 }
-test('uses committed production URL and version 3 when variables are absent', () => {
+test('uses committed production URL and version 5 when variables are absent', () => {
   const writes = run({ GITHUB_ENV: 'github-env' });
   assert.equal(writes['src/config/Backend.ts'], 'const PRODUCTION_BACKEND_URL = "https://cricket.example";');
-  assert.equal(writes['github-env'], 'RELEASE_VERSION_CODE=3\nRELEASE_VERSION_NAME=1.0.2\n');
+  assert.equal(writes['github-env'], 'RELEASE_VERSION_CODE=5\nRELEASE_VERSION_NAME=1.1.0\n');
 });
 test('explicit release settings override committed defaults', () => {
   const writes = run({ BACKEND_URL: 'https://override.example/', VERSION_CODE: '4', VERSION_NAME: '1.0.3', GITHUB_ENV: 'github-env' });
